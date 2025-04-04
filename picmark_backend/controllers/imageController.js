@@ -23,22 +23,34 @@ exports.saveImage = async (req, res) => {
       width,
       height,
       fileSize,
-      format
+      format,
+      ipAddress
     } = req.body;
 
     // 创建新图片记录
-    const image = await Image.create({
+    const imageData = {
       title,
       description,
       url,
       key,
       tags: tags || [],
-      user: req.user._id,
       width,
       height,
       fileSize,
-      format
-    });
+      format,
+      isPublic: true, // 默认公开
+      ipAddress: ipAddress || req.ip || '未知' // 保存IP地址，如果前端未提供则使用请求中的IP
+    };
+    
+    // 如果用户已登录，添加用户ID
+    if (req.user) {
+      imageData.user = req.user._id;
+    } else {
+      // 如果未登录，标记为匿名上传
+      imageData.isAnonymous = true;
+    }
+
+    const image = await Image.create(imageData);
 
     res.status(201).json({
       success: true,
@@ -64,12 +76,18 @@ exports.getImages = async (req, res) => {
     // 过滤条件
     const filter = {};
     
-    // 只有管理员可以查看所有图片，普通用户只能查看自己的和公开的图片
-    if (req.user.role !== 'admin') {
-      filter.$or = [
-        { user: req.user._id },
-        { isPublic: true }
-      ];
+    // 检查用户是否登录及其角色
+    if (req.user) {
+      // 只有管理员可以查看所有图片，普通用户只能查看自己的和公开的图片
+      if (req.user.role !== 'admin') {
+        filter.$or = [
+          { user: req.user._id },
+          { isPublic: true }
+        ];
+      }
+    } else {
+      // 未登录用户只能查看公开图片
+      filter.isPublic = true;
     }
 
     // 搜索条件
@@ -193,14 +211,24 @@ exports.getImage = async (req, res) => {
       });
     }
 
-    // 如果图片不是公开的，并且当前用户不是所有者或管理员，则拒绝访问
-    if (!image.isPublic && 
-        req.user.role !== 'admin' && 
-        image.user._id.toString() !== req.user._id.toString()) {
-      return res.status(403).json({
-        success: false,
-        message: '您无权访问此图片'
-      });
+    // 如果图片不是公开的，需要检查权限
+    if (!image.isPublic) {
+      // 如果用户未登录，拒绝访问
+      if (!req.user) {
+        return res.status(403).json({
+          success: false,
+          message: '您需要登录才能访问此图片'
+        });
+      }
+      
+      // 如果用户不是管理员且不是图片所有者，拒绝访问
+      if (req.user.role !== 'admin' && 
+          image.user._id.toString() !== req.user._id.toString()) {
+        return res.status(403).json({
+          success: false,
+          message: '您无权访问此图片'
+        });
+      }
     }
 
     // 增加浏览量
@@ -275,47 +303,91 @@ exports.updateImage = async (req, res) => {
 exports.deleteImage = async (req, res) => {
   try {
     const imageId = req.params.id;
+    console.log(`请求删除图片，ID: ${imageId}`);
 
     // 查找图片
     const image = await Image.findById(imageId);
 
     if (!image) {
+      console.log(`图片不存在，ID: ${imageId}`);
       return res.status(404).json({
         success: false,
         message: '图片不存在'
       });
     }
 
-    // 只有图片所有者或管理员可以删除
-    if (image.user.toString() !== req.user._id.toString() && req.user.role !== 'admin') {
-      return res.status(403).json({
-        success: false,
-        message: '您无权删除此图片'
+    // 记录图片关键信息，用于可能的恢复
+    const imageKey = image.key;
+    console.log(`准备删除图片: ${image.title}, 存储键: ${imageKey}`);
+
+    // 检查权限
+    // 允许以下情况删除：
+    // 1. 图片是匿名上传的 (isAnonymous === true)
+    // 2. 用户是图片所有者
+    // 3. 用户是管理员
+    if (!image.isAnonymous) {
+      if (!req.user) {
+        console.log(`未授权的删除请求: 图片ID ${imageId} 不是匿名上传且未提供认证`);
+        return res.status(401).json({
+          success: false,
+          message: '未授权，请登录后再试'
+        });
+      }
+      
+      if (image.user && image.user.toString() !== req.user._id.toString() && req.user.role !== 'admin') {
+        console.log(`权限不足: 用户 ${req.user._id} 尝试删除其他用户的图片 ${imageId}`);
+        return res.status(403).json({
+          success: false,
+          message: '您无权删除此图片'
+        });
+      }
+    }
+
+    // 从七牛云删除文件 - 先执行这一步，因为如果失败，我们可以重试
+    let qiniuDeleteSuccess = false;
+    try {
+      console.log(`开始从七牛云删除文件: ${imageKey}`);
+      await deleteFile(imageKey);
+      qiniuDeleteSuccess = true;
+      console.log(`成功从七牛云删除文件: ${imageKey}`);
+    } catch (qiniuError) {
+      console.error(`从七牛云删除文件失败:`, qiniuError);
+      // 这里不返回错误，继续尝试删除数据库中的记录
+      if (qiniuError.respInfo) {
+        console.error(`七牛云响应信息: 状态码=${qiniuError.respInfo.statusCode}`);
+      }
+    }
+
+    // 从数据库删除图片记录
+    try {
+      await Image.findByIdAndDelete(imageId);
+      console.log(`成功从数据库删除图片记录: ${imageId}`);
+    } catch (dbError) {
+      console.error(`从数据库删除图片记录失败:`, dbError);
+      
+      // 如果七牛云文件已删除但数据库删除失败，我们需要返回错误
+      if (qiniuDeleteSuccess) {
+        return res.status(500).json({
+          success: false,
+          message: '数据库操作失败，但云存储文件已删除',
+          error: dbError.message
+        });
+      }
+      
+      throw dbError; // 重新抛出错误，由外层catch处理
+    }
+
+    // 如果七牛云删除失败但数据库删除成功，返回部分成功的信息
+    if (!qiniuDeleteSuccess) {
+      return res.status(207).json({
+        success: true,
+        partialSuccess: true,
+        message: '图片记录已删除，但云存储删除失败，请联系管理员',
+        key: imageKey
       });
     }
 
-    // 先从数据库删除，防止七牛云删除操作的超时或错误影响整个操作
-    await Image.findByIdAndDelete(imageId);
-
-    // 从七牛云删除 - 使用Promise.race设置超时
-    try {
-      // 设置超时Promise
-      const timeout = new Promise((_, reject) => 
-        setTimeout(() => reject(new Error('七牛云删除文件超时')), 5000)
-      );
-      
-      // 使用Promise.race确保不会无限期等待
-      await Promise.race([
-        deleteFile(image.key),
-        timeout
-      ]);
-      
-      console.log(`成功从七牛云删除文件: ${image.key}`);
-    } catch (qiniuError) {
-      console.error('从七牛云删除文件失败:', qiniuError);
-      // 已从数据库删除，所以继续返回成功响应
-    }
-
+    // 全部成功
     return res.json({
       success: true,
       message: '图片已成功删除'
@@ -324,7 +396,8 @@ exports.deleteImage = async (req, res) => {
     console.error('删除图片失败:', error);
     return res.status(500).json({
       success: false,
-      message: '服务器错误'
+      message: '服务器错误',
+      error: error.message
     });
   }
 };

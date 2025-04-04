@@ -5,13 +5,13 @@ const { protect } = require('../middleware/auth');
 
 const router = express.Router();
 
-// 以下路由需要认证
-router.use(protect);
-
-// 获取图片列表 GET /api/images
+// 获取图片列表 GET /api/images - 公开访问
 router.get('/', imageController.getImages);
 
-// 保存图片信息 POST /api/images
+// 获取单张图片 GET /api/images/:id - 公开访问
+router.get('/:id', imageController.getImage);
+
+// 保存图片信息 POST /api/images - 公开访问
 router.post(
   '/',
   [
@@ -26,14 +26,15 @@ router.post(
   imageController.saveImage
 );
 
-// 获取单张图片 GET /api/images/:id
-router.get('/:id', imageController.getImage);
+// 删除图片 DELETE /api/images/:id - 公开访问
+// 在控制器中会检查权限（匿名上传的图片可以直接删除，其他图片需要权限）
+router.delete('/:id', imageController.deleteImage);
+
+// 以下路由需要认证
+router.use(protect);
 
 // 更新图片信息 PUT /api/images/:id
 router.put('/:id', imageController.updateImage);
-
-// 删除图片 DELETE /api/images/:id
-router.delete('/:id', imageController.deleteImage);
 
 // 点赞/取消点赞 POST /api/images/:id/like
 router.post('/:id/like', imageController.toggleLike);

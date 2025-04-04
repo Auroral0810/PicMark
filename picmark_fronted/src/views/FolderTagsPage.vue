@@ -255,27 +255,10 @@ export default {
     const activeTab = ref('folders')
     
     // 文件夹相关状态
-    const folders = ref([
-      { id: 1, name: '风景摄影', count: 53, color: '#67C23A', description: '各种风景照片' },
-      { id: 2, name: '产品展示', count: 27, color: '#409EFF', description: '产品照片和宣传图' },
-      { id: 3, name: '教程截图', count: 84, color: '#E6A23C', description: '各种教程的截图' },
-      { id: 4, name: '头像素材', count: 12, color: '#F56C6C', description: '可以用作头像的图片' },
-      { id: 5, name: '未分类', count: 156, color: '#909399', description: '未分类的图片' }
-    ])
+    const folders = ref([])
     
     // 标签相关状态
-    const tags = ref([
-      { id: 1, name: '风景', count: 76, type: '', effect: 'light' },
-      { id: 2, name: '科技', count: 45, type: 'info', effect: 'light' },
-      { id: 3, name: '教程', count: 84, type: 'success', effect: 'plain' },
-      { id: 4, name: '重要', count: 23, type: 'danger', effect: 'dark' },
-      { id: 5, name: '产品', count: 32, type: 'warning', effect: 'light' },
-      { id: 6, name: '设计', count: 28, type: '', effect: 'light' },
-      { id: 7, name: '架构', count: 15, type: 'info', effect: 'dark' },
-      { id: 8, name: '草稿', count: 41, type: '', effect: 'plain' },
-      { id: 9, name: '参考', count: 36, type: 'warning', effect: 'plain' },
-      { id: 10, name: '灵感', count: 19, type: 'success', effect: 'light' }
-    ])
+    const tags = ref([])
     
     // 标签搜索
     const tagSearchKeyword = ref('')

@@ -7,6 +7,15 @@
           <h1 class="page-title">图片库</h1>
           <p class="text-secondary">管理并组织您的所有图片</p>
         </div>
+        
+        <!-- 全选按钮 -->
+        <div v-if="currentImages.length > 0 && (multiSelectMode || selectedImages.length > 0)" class="select-all-container">
+          <el-checkbox 
+            :indeterminate="isIndeterminate" 
+            v-model="selectAll"
+            @change="handleSelectAllChange"
+          >全选</el-checkbox>
+        </div>
       </div>
       
       <div class="header-right">
@@ -17,12 +26,49 @@
             placeholder="搜索图片..." 
             class="search-input"
             clearable
+            @keyup.enter="handleSearch"
           >
             <template #prefix>
               <el-icon class="search-icon"><Search /></el-icon>
             </template>
           </el-input>
         </div>
+        
+        <!-- 批量操作与多选 -->
+        <div class="bulk-actions" v-show="selectedImages.length > 0">
+          <span class="selected-count">已选择 {{ selectedImages.length }} 张图片</span>
+          <el-button-group>
+            <el-button size="small" @click="copyMultipleLinks('markdown')">
+              <el-icon><Document /></el-icon>
+              复制MD链接
+            </el-button>
+            <el-button size="small" @click="copyMultipleLinks('html')">
+              <el-icon><Picture /></el-icon>
+              复制HTML链接
+            </el-button>
+            <el-button size="small" @click="copyMultipleLinks('plain')">
+              <el-icon><Link /></el-icon>
+              复制URL链接
+            </el-button>
+            <el-button size="small" type="danger" @click="confirmDeleteMultiple">
+              <el-icon><Delete /></el-icon>
+              批量删除
+            </el-button>
+          </el-button-group>
+          <el-button size="small" @click="clearSelection">
+            取消选择
+          </el-button>
+        </div>
+        
+        <!-- 开启多选模式按钮 -->
+        <el-button 
+          v-if="!multiSelectMode && selectedImages.length === 0" 
+          size="small" 
+          @click="toggleMultiSelectMode"
+        >
+          <el-icon><Select /></el-icon>
+          多选模式
+        </el-button>
         
         <!-- 筛选按钮 -->
         <div class="action-btn-group">
@@ -158,14 +204,34 @@
       <!-- 网格视图 -->
       <template v-else-if="viewMode === 'grid'">
         <div class="image-grid">
-          <div v-for="image in currentImages" :key="image.id" class="image-card">
+          <div 
+            v-for="image in currentImages" 
+            :key="image.id" 
+            class="image-card"
+            :class="{'is-selected': isSelected(image)}"
+            @click="handleImageClick(image)"
+          >
+            <!-- 多选框 -->
+            <div class="select-checkbox" v-if="multiSelectMode || selectedImages.length > 0">
+              <el-checkbox 
+                v-model="image.selected" 
+                @change="(val) => updateSelection(image, val)"
+                @click.stop
+              ></el-checkbox>
+            </div>
+
             <div class="image-wrapper">
               <img :src="image.url" :alt="image.filename" />
               <div class="image-overlay">
                 <div class="image-actions">
                   <el-tooltip content="复制Markdown链接" placement="top">
-                    <el-button circle size="small" @click="copyMarkdownLink(image)">
+                    <el-button circle size="small" @click.stop="copyMarkdownLink(image)">
                       <el-icon><Document /></el-icon>
+                    </el-button>
+                  </el-tooltip>
+                  <el-tooltip content="复制HTML链接" placement="top">
+                    <el-button circle size="small" @click.stop="copyHTMLLink(image)">
+                      <el-icon><Picture /></el-icon>
                     </el-button>
                   </el-tooltip>
                   <el-tooltip content="复制图片链接" placement="top">
@@ -212,7 +278,18 @@
             v-for="image in currentImages" 
             :key="image.id" 
             class="masonry-item"
+            :class="{'is-selected': isSelected(image)}"
+            @click="handleImageClick(image)"
           >
+            <!-- 多选框 -->
+            <div class="select-checkbox" v-if="multiSelectMode || selectedImages.length > 0">
+              <el-checkbox 
+                v-model="image.selected" 
+                @change="(val) => updateSelection(image, val)"
+                @click.stop
+              ></el-checkbox>
+            </div>
+            
             <div class="image-wrapper">
               <img :src="image.url" :alt="image.filename" />
               <div class="image-overlay">
@@ -220,6 +297,11 @@
                   <el-tooltip content="复制Markdown链接" placement="top">
                     <el-button circle size="small" @click="copyMarkdownLink(image)">
                       <el-icon><Document /></el-icon>
+                    </el-button>
+                  </el-tooltip>
+                  <el-tooltip content="复制HTML链接" placement="top">
+                    <el-button circle size="small" @click="copyHTMLLink(image)">
+                      <el-icon><Picture /></el-icon>
                     </el-button>
                   </el-tooltip>
                   <el-tooltip content="复制图片链接" placement="top">
@@ -265,7 +347,9 @@
           :data="currentImages"
           style="width: 100%"
           :row-class-name="tableRowClassName"
+          @selection-change="handleSelectionChange"
         >
+          <el-table-column type="selection" width="55"></el-table-column>
           <el-table-column label="预览" width="120">
             <template #default="scope">
               <div class="table-image-preview" @click="showPreviewImage(scope.row)">
@@ -306,12 +390,17 @@
               </el-tag>
             </template>
           </el-table-column>
-          <el-table-column label="操作" fixed="right" width="200">
+          <el-table-column label="操作" fixed="right" width="240">
             <template #default="scope">
               <el-button-group>
                 <el-tooltip content="复制Markdown链接" placement="top">
                   <el-button size="small" @click="copyMarkdownLink(scope.row)">
                     <el-icon><Document /></el-icon>
+                  </el-button>
+                </el-tooltip>
+                <el-tooltip content="复制HTML链接" placement="top">
+                  <el-button size="small" @click="copyHTMLLink(scope.row)">
+                    <el-icon><Picture /></el-icon>
                   </el-button>
                 </el-tooltip>
                 <el-tooltip content="复制图片链接" placement="top">
@@ -541,6 +630,25 @@
         </div>
       </template>
     </el-dialog>
+    
+    <!-- 批量删除确认对话框 -->
+    <el-dialog
+      v-model="batchDeleteDialogVisible"
+      title="批量删除确认"
+      width="400px"
+    >
+      <div class="delete-confirmation">
+        <p>确定要删除选中的 {{ selectedImages.length }} 张图片吗？</p>
+        <p class="delete-warning">此操作不可撤销，图片将从存储中永久删除。</p>
+      </div>
+      
+      <template #footer>
+        <div class="dialog-footer">
+          <el-button @click="batchDeleteDialogVisible = false">取消</el-button>
+          <el-button type="danger" @click="deleteMultipleImages">确认删除</el-button>
+        </div>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -704,13 +812,15 @@ export default {
       if (!size) return '0 Bytes'
       const units = ['Bytes', 'KB', 'MB', 'GB']
       const i = Math.floor(Math.log(size) / Math.log(1024))
-      return Math.round(size / Math.pow(1024, i), 2) + ' ' + units[i]
+      return (size / Math.pow(1024, i)).toFixed(2) + ' ' + units[i]
     }
     
     const formatDate = (date) => {
       if (!date) return ''
       const d = new Date(date)
-      return d.toLocaleDateString()
+      const dateStr = d.toLocaleDateString()
+      const timeStr = d.toLocaleTimeString()
+      return `${dateStr} ${timeStr}`
     }
     
     const copyMarkdownLink = (image) => {
@@ -808,7 +918,10 @@ export default {
     }
 
     const copyHTMLLink = (image) => {
-      navigator.clipboard.writeText(`<img src="${image.url}" alt="${image.filename}" />`).then(() => {
+      // 创建带有宽高、文件大小（精确到两位小数）、上传时间（含时分秒）和IP地址的HTML标签
+      const html = `<img src="${image.url}" alt="${image.filename}" width="${image.width}" height="${image.height}" data-size="${formatFileSize(image.size)}" data-upload-time="${formatDate(image.uploadTime)}" ${image.ipAddress ? `data-ip="${image.ipAddress}"` : ''} />`;
+      
+      navigator.clipboard.writeText(html).then(() => {
         ElMessage.success('HTML链接已复制到剪贴板');
       }).catch(err => {
         console.error('复制失败:', err);
@@ -840,6 +953,156 @@ export default {
 
     // 计算属性
     const isEmpty = computed(() => store.getters.filteredImages.length === 0);
+    
+    // 多选相关状态
+    const multiSelectMode = ref(false)
+    const selectedImages = ref([])
+    const batchDeleteDialogVisible = ref(false)
+    
+    // 判断图片是否被选中
+    const isSelected = (image) => {
+      return selectedImages.value.some(img => img.id === image.id)
+    }
+    
+    // 更新选中状态
+    const updateSelection = (image, isChecked) => {
+      if (isChecked) {
+        if (!isSelected(image)) {
+          selectedImages.value.push(image)
+        }
+      } else {
+        selectedImages.value = selectedImages.value.filter(img => img.id !== image.id)
+      }
+    }
+    
+    // 处理图片点击事件
+    const handleImageClick = (image) => {
+      // 如果是多选模式或已有选中图片，则切换选中状态
+      if (multiSelectMode.value || selectedImages.value.length > 0) {
+        image.selected = !image.selected
+        updateSelection(image, image.selected)
+        return
+      }
+      
+      // 否则，预览图片
+      showPreviewImage(image)
+    }
+    
+    // 切换多选模式
+    const toggleMultiSelectMode = () => {
+      multiSelectMode.value = !multiSelectMode.value
+      if (!multiSelectMode.value && selectedImages.value.length === 0) {
+        clearSelection()
+      }
+    }
+    
+    // 清除所有选择
+    const clearSelection = () => {
+      currentImages.value.forEach(img => img.selected = false)
+      selectedImages.value = []
+      multiSelectMode.value = false
+    }
+    
+    // 表格选择变化处理
+    const handleSelectionChange = (selection) => {
+      selectedImages.value = selection
+    }
+    
+    // 复制多个图片链接
+    const copyMultipleLinks = (type) => {
+      if (selectedImages.value.length === 0) return
+      
+      let content = ''
+      
+      switch(type) {
+        case 'markdown':
+          content = selectedImages.value
+            .map(image => {
+              const format = store.state.settings.markdownFormat
+              return format
+                .replace('{filename}', image.filename)
+                .replace('{url}', image.url)
+            })
+            .join('\n')
+          break
+        case 'html':
+          content = selectedImages.value
+            .map(image => `<img src="${image.url}" alt="${image.filename}" width="${image.width}" height="${image.height}" data-size="${formatFileSize(image.size)}" data-upload-time="${formatDate(image.uploadTime)}" ${image.ipAddress ? `data-ip="${image.ipAddress}"` : ''} />`)
+            .join('\n')
+          break
+        case 'plain':
+        default:
+          content = selectedImages.value
+            .map(image => image.url)
+            .join('\n')
+          break
+      }
+      
+      navigator.clipboard.writeText(content).then(() => {
+        ElMessage.success(`已成功复制${selectedImages.value.length}个链接到剪贴板`)
+      }).catch(err => {
+        console.error('复制失败:', err)
+        ElMessage.error('复制失败')
+      })
+    }
+    
+    // 批量删除确认
+    const confirmDeleteMultiple = () => {
+      if (selectedImages.value.length === 0) return
+      batchDeleteDialogVisible.value = true
+    }
+    
+    // 批量删除图片
+    const deleteMultipleImages = async () => {
+      if (selectedImages.value.length === 0) return
+      
+      try {
+        let success = 0
+        let failed = 0
+        
+        for (const image of selectedImages.value) {
+          try {
+            await store.dispatch('deleteImage', image.id)
+            success++
+          } catch (err) {
+            console.error(`删除图片 ${image.id} 失败:`, err)
+            failed++
+          }
+        }
+        
+        batchDeleteDialogVisible.value = false
+        clearSelection()
+        
+        if (failed === 0) {
+          ElMessage.success(`成功删除 ${success} 张图片`)
+        } else {
+          ElMessage.warning(`操作完成: ${success} 张图片删除成功, ${failed} 张图片删除失败`)
+        }
+      } catch (error) {
+        ElMessage.error('批量删除失败')
+        console.error('批量删除失败:', error)
+      }
+    }
+    
+    // 全选相关
+    const selectAll = ref(false)
+    const isIndeterminate = computed(() => {
+      return selectedImages.value.length > 0 && selectedImages.value.length < currentImages.value.length
+    })
+    
+    // 处理全选/取消全选
+    const handleSelectAllChange = (val) => {
+      currentImages.value.forEach(image => {
+        image.selected = val
+        updateSelection(image, val)
+      })
+    }
+    
+    // 监听选中项变化，更新全选状态
+    watch(selectedImages, (newVal) => {
+      const allSelected = currentImages.value.length > 0 && newVal.length === currentImages.value.length
+      selectAll.value = allSelected
+    })
     
     // 组件挂载时从存储加载数据
     onMounted(() => {
@@ -920,6 +1183,21 @@ export default {
       startDrag,
       onDrag,
       stopDrag,
+      multiSelectMode,
+      selectedImages,
+      batchDeleteDialogVisible,
+      isSelected,
+      updateSelection,
+      handleImageClick,
+      toggleMultiSelectMode,
+      clearSelection,
+      handleSelectionChange,
+      copyMultipleLinks,
+      confirmDeleteMultiple,
+      deleteMultipleImages,
+      selectAll,
+      isIndeterminate,
+      handleSelectAllChange,
     }
   }
 }
@@ -1496,6 +1774,43 @@ export default {
 .preview-link-btn .el-icon {
   margin-right: 8px;
   font-size: 16px;
+}
+
+/* 多选样式 */
+.bulk-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background-color: #f0f9ff;
+  padding: 8px 16px;
+  border-radius: 8px;
+  border: 1px solid #e0f2fe;
+}
+
+.selected-count {
+  font-weight: 500;
+  color: var(--primary-color, #3b82f6);
+  margin-right: 8px;
+}
+
+.image-card {
+  position: relative;
+  transition: all 0.3s ease;
+}
+
+.image-card.is-selected {
+  transform: translateY(-4px);
+  box-shadow: 0 0 0 2px var(--primary-color, #3b82f6), 0 12px 24px rgba(0, 0, 0, 0.12);
+}
+
+.select-checkbox {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  z-index: 2;
+  background-color: rgba(255, 255, 255, 0.7);
+  border-radius: 4px;
+  padding: 2px;
 }
 
 @media (max-width: 768px) {

@@ -1,0 +1,79 @@
+# 操作系统文件
+.DS_Store
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# Node.js
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+.pnpm-store/
+.npm
+.yarn-integrity
+.eslintcache
+.node_repl_history
+logs
+*.log
+
+# Vue项目
+/picmark_fronted/dist
+/picmark_fronted/.env.local
+/picmark_fronted/.env.*.local
+/picmark_fronted/dist-ssr
+/picmark_fronted/coverage
+
+# Node.js后端
+/picmark_backend/uploads/*
+!/picmark_backend/uploads/.gitkeep
+/picmark_backend/coverage
+/picmark_backend/dist
+
+# 环境变量文件（请确保在实际部署前添加自己的环境变量文件）
+# 注意：如果您需要保留示例环境文件，请不要忽略.env.example或相似文件
+.env
+.env.*
+!.env.example
+
+# 编辑器目录和文件
+.idea/
+.vscode/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+*.sublime-*
+.history/
+.project
+.classpath
+.settings/
+*.iml
+.vscode-test
+
+# 依赖管理锁定文件（视情况选择保留或忽略）
+# package-lock.json
+# yarn.lock
+# pnpm-lock.yaml
+
+# 测试覆盖率报告
+coverage/
+.nyc_output
+
+# 构建产物
+dist/
+build/
+out/
+
+# 临时文件
+temp/
+tmp/
+.tmp/
+.cache/
+
+# 日志文件
+*.log
+logs/ 

@@ -151,6 +151,29 @@
         
         <el-table :data="uploadQueue" style="width: 100%">
           <!-- 队列表格内容 -->
+          <el-table-column width="80">
+            <template #default="scope">
+              <div class="image-thumbnail">
+                <el-image :src="scope.row.preview" fit="cover"></el-image>
+              </div>
+            </template>
+          </el-table-column>
+          
+          <el-table-column prop="name" label="文件名" min-width="180"></el-table-column>
+          
+          <el-table-column label="大小" width="120">
+            <template #default="scope">
+              {{ formatFileSize(scope.row.size) }}
+            </template>
+          </el-table-column>
+          
+          <el-table-column label="操作" width="120">
+            <template #default="scope">
+              <el-button size="small" type="danger" @click="removeFromQueue(scope.$index)" circle>
+                <el-icon><Delete /></el-icon>
+              </el-button>
+            </template>
+          </el-table-column>
         </el-table>
         
         <!-- 上传进度 -->
@@ -170,12 +193,73 @@
           <div class="section-header">
             <h3>上传结果 ({{ uploadResults.length }})</h3>
             <div class="section-actions">
-              <el-button size="small" type="primary" @click="copyAllLinks">复制所有链接</el-button>
+              <el-button-group>
+                <el-button size="small" @click="copyAllLinks('markdown')">复制所有Markdown</el-button>
+                <el-button size="small" @click="copyAllLinks('html')">复制所有HTML</el-button>
+                <el-button size="small" @click="copyAllLinks('plain')">复制所有URL</el-button>
+              </el-button-group>
             </div>
           </div>
         </template>
         
-        <!-- 结果表格 -->
+        <el-table :data="uploadResults" style="width: 100%">
+          <el-table-column width="100">
+            <template #default="scope">
+              <div class="image-thumbnail">
+                <el-image :src="scope.row.url" :preview-src-list="[scope.row.url]" fit="cover"></el-image>
+              </div>
+            </template>
+          </el-table-column>
+          
+          <el-table-column prop="title" label="文件名" min-width="150"></el-table-column>
+          
+          <el-table-column label="链接" min-width="180">
+            <template #default="scope">
+              <el-tabs type="border-card" class="mini-tabs">
+                <el-tab-pane label="Markdown">
+                  <div class="code-block">
+                    <code>{{ scope.row.markdownLink }}</code>
+                    <el-button size="small" circle @click="copyLink(scope.row, 'markdown')">
+                      <el-icon><Copy /></el-icon>
+                    </el-button>
+                  </div>
+                </el-tab-pane>
+                <el-tab-pane label="HTML">
+                  <div class="code-block">
+                    <code>{{ scope.row.htmlLink }}</code>
+                    <el-button size="small" circle @click="copyLink(scope.row, 'html')">
+                      <el-icon><Copy /></el-icon>
+                    </el-button>
+                  </div>
+                </el-tab-pane>
+                <el-tab-pane label="URL">
+                  <div class="code-block">
+                    <code>{{ scope.row.url }}</code>
+                    <el-button size="small" circle @click="copyLink(scope.row, 'plain')">
+                      <el-icon><Copy /></el-icon>
+                    </el-button>
+                  </div>
+                </el-tab-pane>
+              </el-tabs>
+            </template>
+          </el-table-column>
+          
+          <el-table-column label="操作" width="180">
+            <template #default="scope">
+              <el-button-group>
+                <el-button size="small" type="primary" @click="viewImage(scope.row)" plain>
+                  <el-icon><View /></el-icon>
+                </el-button>
+                <el-button size="small" type="success" @click="editImage(scope.row)" plain>
+                  <el-icon><Edit /></el-icon>
+                </el-button>
+                <el-button size="small" type="danger" @click="deleteImage(scope.row)" plain>
+                  <el-icon><Delete /></el-icon>
+                </el-button>
+              </el-button-group>
+            </template>
+          </el-table-column>
+        </el-table>
       </el-card>
     </div>
     
@@ -228,7 +312,7 @@
 <script>
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useStore } from 'vuex'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 
 export default {
   name: 'UploadPage',
@@ -359,7 +443,7 @@ export default {
     const generateMarkdownLink = (image) => {
       const format = store.state.settings.markdownFormat
       return format
-        .replace('{filename}', image.filename)
+        .replace('{filename}', image.title || image.filename)
         .replace('{url}', image.url)
     }
     
@@ -382,18 +466,93 @@ export default {
       })
     }
     
-    const copyAllLinks = () => {
-      const markdown = uploadResults.value
-        .map(image => generateMarkdownLink(image))
-        .join('\n')
+    const copyLink = (image, type) => {
+      let content = '';
       
-      navigator.clipboard.writeText(markdown).then(() => {
-        ElMessage.success('所有Markdown链接已复制到剪贴板')
+      switch(type) {
+        case 'markdown':
+          content = image.markdownLink;
+          break;
+        case 'html':
+          content = image.htmlLink;
+          break;
+        case 'plain':
+        default:
+          content = image.url;
+          break;
+      }
+      
+      navigator.clipboard.writeText(content).then(() => {
+        ElMessage.success('链接已复制到剪贴板');
       }).catch(err => {
-        console.error('复制失败:', err)
-        ElMessage.error('复制失败')
-      })
-    }
+        console.error('复制失败:', err);
+        ElMessage.error('复制失败');
+      });
+    };
+    
+    const copyAllLinks = (type) => {
+      if (uploadResults.value.length === 0) return;
+      
+      let content = '';
+      
+      switch(type) {
+        case 'markdown':
+          content = uploadResults.value
+            .map(image => image.markdownLink)
+            .join('\n');
+          break;
+        case 'html':
+          content = uploadResults.value
+            .map(image => image.htmlLink)
+            .join('\n');
+          break;
+        case 'plain':
+        default:
+          content = uploadResults.value
+            .map(image => image.url)
+            .join('\n');
+          break;
+      }
+      
+      navigator.clipboard.writeText(content).then(() => {
+        ElMessage.success(`所有${type === 'markdown' ? 'Markdown' : type === 'html' ? 'HTML' : 'URL'}链接已复制到剪贴板`);
+      }).catch(err => {
+        console.error('复制失败:', err);
+        ElMessage.error('复制失败');
+      });
+    };
+    
+    const viewImage = (image) => {
+      window.open(image.url, '_blank');
+    };
+    
+    const editImage = () => {
+      // 可以打开编辑对话框
+      ElMessage.info('图片编辑功能尚未实现');
+    };
+    
+    const deleteImage = (image) => {
+      ElMessageBox.confirm(
+        '确定要删除这张图片吗？这将从七牛云删除该图片。',
+        '删除确认',
+        {
+          confirmButtonText: '确定',
+          cancelButtonText: '取消',
+          type: 'warning'
+        }
+      ).then(async () => {
+        try {
+          await store.dispatch('deleteImage', image.id);
+          ElMessage.success('图片已成功删除');
+          // 从上传结果中移除该图片
+          uploadResults.value = uploadResults.value.filter(img => img.id !== image.id);
+        } catch (error) {
+          ElMessage.error('删除失败：' + error.message);
+        }
+      }).catch(() => {
+        // 用户取消删除
+      });
+    };
     
     // 从Markdown上传图片
     const processMarkdownFile = () => {
@@ -472,10 +631,14 @@ export default {
       generateMarkdownLink,
       copyMarkdownLink,
       copyImageUrl,
+      copyLink,
       copyAllLinks,
       processMarkdownFile,
       focusForPaste,
-      formatFileSize
+      formatFileSize,
+      viewImage,
+      editImage,
+      deleteImage
     }
   }
 }
@@ -785,5 +948,65 @@ export default {
     margin-right: 0;
     margin-bottom: 16px;
   }
+}
+
+.image-thumbnail {
+  width: 80px;
+  height: 80px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  overflow: hidden;
+  background-color: #f5f7fa;
+}
+
+.image-thumbnail .el-image {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.code-block {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background-color: #f5f7fa;
+  border-radius: 4px;
+  padding: 8px 12px;
+  margin: 8px 0;
+}
+
+.code-block code {
+  font-family: monospace;
+  font-size: 13px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 1;
+}
+
+.mini-tabs :deep(.el-tabs__content) {
+  padding: 10px 5px;
+}
+
+.mini-tabs :deep(.el-tabs__header) {
+  margin-bottom: 5px;
+}
+
+.mini-tabs :deep(.el-tabs__item) {
+  padding: 0 10px;
+  height: 30px;
+  line-height: 30px;
+}
+
+.results-card {
+  margin-bottom: 24px;
+}
+
+.section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
 }
 </style> 

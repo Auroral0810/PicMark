@@ -114,56 +114,56 @@
               <div class="settings-subtitle">配置PicMark的基本行为</div>
             </div>
             
-            <el-form :model="basicForm" label-position="top" class="settings-form">
-              <el-form-item label="Markdown格式">
-                <el-input v-model="basicForm.markdownFormat" placeholder="例如：![{filename}]({url})">
-                  <template #prepend>
-                    <el-icon><Document /></el-icon>
-                  </template>
-                  <template #append>
-                    <el-tooltip content="支持的变量：{filename}、{url}、{width}、{height}" placement="top">
-                      <el-icon><InfoFilled /></el-icon>
-                    </el-tooltip>
-                  </template>
-                </el-input>
-                <div class="form-tip">自定义生成的Markdown格式，支持多种变量</div>
-              </el-form-item>
+            <el-form :model="basicForm" label-position="left" class="settings-form" :label-width="'120px'">
+              <el-card class="setting-section-card">
+                <template #header>
+                  <div class="card-header">
+                    <span>Markdown 格式设置</span>
+                  </div>
+                </template>
+                
+                <el-form-item label="Markdown格式">
+                  <el-input v-model="basicForm.markdownFormat" placeholder="例如：![{filename}]({url})">
+                    <template #prepend>
+                      <el-icon><Document /></el-icon>
+                    </template>
+                    <template #append>
+                      <el-tooltip content="支持的变量：{filename}、{url}、{width}、{height}" placement="top">
+                        <el-icon><InfoFilled /></el-icon>
+                      </el-tooltip>
+                    </template>
+                  </el-input>
+                  <div class="form-tip">自定义生成的Markdown格式，支持多种变量</div>
+                </el-form-item>
+              </el-card>
               
-              <el-divider content-position="left">显示偏好</el-divider>
-              
-              <el-form-item label="默认视图">
-                <div class="view-mode-container">
+              <el-card class="setting-section-card">
+                <template #header>
+                  <div class="card-header">
+                    <span>显示偏好</span>
+                  </div>
+                </template>
+                
+                <el-form-item label="默认视图">
                   <el-radio-group v-model="basicForm.defaultView" class="view-radio-group">
-                    <el-radio-button label="grid" class="view-radio-button">
-                      <div class="view-option">
-                        <div class="view-icon">
-                          <el-icon><Grid /></el-icon>
-                        </div>
-                        <div class="view-icon-preview grid-preview">
-                          <div></div><div></div><div></div><div></div>
-                        </div>
+                    <el-radio label="grid">
+                      <div class="option-with-icon">
+                        <el-icon><Grid /></el-icon>
                         <span>网格视图</span>
                       </div>
-                    </el-radio-button>
-                    <el-radio-button label="list" class="view-radio-button">
-                      <div class="view-option">
-                        <div class="view-icon">
-                          <el-icon><List /></el-icon>
-                        </div>
-                        <div class="view-icon-preview list-preview">
-                          <div></div><div></div><div></div>
-                        </div>
+                    </el-radio>
+                    <el-radio label="list">
+                      <div class="option-with-icon">
+                        <el-icon><List /></el-icon>
                         <span>列表视图</span>
                       </div>
-                    </el-radio-button>
+                    </el-radio>
                   </el-radio-group>
-                </div>
-                <div class="form-tip">选择图库的默认显示方式</div>
-              </el-form-item>
-              
-              <el-form-item label="默认排序">
-                <div class="sort-option-container">
-                  <el-select v-model="basicForm.sortOption" placeholder="选择排序方式" class="full-width-select">
+                  <div class="form-tip">选择图库的默认显示方式</div>
+                </el-form-item>
+                
+                <el-form-item label="默认排序">
+                  <el-select v-model="basicForm.sortOption" placeholder="选择排序方式" style="width: 100%;">
                     <el-option label="最新上传" value="uploadTime:desc">
                       <div class="option-with-icon">
                         <el-icon><Sort /></el-icon>
@@ -201,34 +201,48 @@
                       </div>
                     </el-option>
                   </el-select>
-                </div>
-                <div class="form-tip">设置图片默认的排序方式</div>
-              </el-form-item>
+                  <div class="form-tip">设置图片默认的排序方式</div>
+                </el-form-item>
+              </el-card>
               
-              <el-form-item label="每页显示">
-                <div class="page-size-selector">
-                  <el-slider
-                    v-model="basicForm.pageSize"
-                    :min="10"
-                    :max="100"
-                    :step="10"
-                    :marks="{10: '10', 20: '20', 50: '50', 100: '100'}"
-                    class="page-size-slider"
-                  ></el-slider>
-                  <div class="page-size-display">
-                    <div class="size-value">{{ basicForm.pageSize }}</div>
-                    <div class="size-label">张图片/页</div>
+              <el-card class="setting-section-card">
+                <template #header>
+                  <div class="card-header">
+                    <span>分页设置</span>
                   </div>
-                </div>
-                <div class="form-tip">调整每页显示的图片数量</div>
-              </el-form-item>
+                </template>
+                
+                <el-form-item label="每页显示">
+                  <div class="page-size-container">
+                    <div class="slider-container">
+                      <el-slider
+                        v-model="basicForm.pageSize"
+                        :min="10"
+                        :max="100"
+                        :step="10"
+                        :marks="{10: '10', 20: '20', 50: '50', 100: '100'}"
+                        class="page-size-slider"
+                      />
+                    </div>
+                    <div class="page-size-display">
+                      <div class="size-value">{{ basicForm.pageSize }}</div>
+                      <div class="size-label">张图片/页</div>
+                    </div>
+                  </div>
+                  <div class="form-tip">调整每页显示的图片数量</div>
+                </el-form-item>
+              </el-card>
               
-              <el-form-item>
-                <el-button type="primary" size="large" @click="saveBasicSettings" :loading="basicSaving">
+              <div class="form-actions">
+                <el-button type="primary" @click="saveBasicSettings" :loading="basicSaving">
                   <el-icon><Check /></el-icon>
                   <span>保存设置</span>
                 </el-button>
-              </el-form-item>
+                <el-button @click="resetBasicSettings">
+                  <el-icon><RefreshRight /></el-icon>
+                  <span>重置</span>
+                </el-button>
+              </div>
             </el-form>
           </div>
         </el-tab-pane>
@@ -248,63 +262,130 @@
               <div class="settings-subtitle">控制图片上传和处理选项</div>
             </div>
             
-            <el-form :model="uploadForm" label-position="top" class="settings-form">
-              <el-form-item label="文件大小限制">
-                <div class="size-limit-container">
-                  <el-input-number
-                    v-model="uploadForm.maxSize"
-                    :min="1"
-                    :max="20"
-                    controls-position="right"
-                    class="size-input"
-                  ></el-input-number>
-                  <span class="input-unit">MB（最大20MB）</span>
-                </div>
-                <div class="form-tip">限制单个文件的最大上传大小</div>
-              </el-form-item>
-              
-              <el-divider content-position="left">图片处理</el-divider>
-              
-              <el-form-item class="switch-option">
-                <template #label>
-                  <div class="switch-label">
-                    <div class="switch-title">默认压缩图片</div>
-                    <div class="switch-description">上传前压缩图片以节省空间</div>
+            <el-form :model="uploadForm" label-position="left" class="settings-form" :label-width="'120px'">
+              <el-card class="setting-section-card">
+                <template #header>
+                  <div class="card-header">
+                    <span>文件限制</span>
                   </div>
                 </template>
-                <el-switch v-model="uploadForm.compress" active-color="#3b82f6" inactive-color="#e5e7eb"></el-switch>
-              </el-form-item>
+                
+                <el-form-item label="文件大小限制">
+                  <div class="size-limit-container">
+                    <el-input-number
+                      v-model="uploadForm.maxSize"
+                      :min="1"
+                      :max="20"
+                      controls-position="right"
+                      class="size-input"
+                    ></el-input-number>
+                    <span class="input-unit">MB（最大20MB）</span>
+                  </div>
+                  <div class="form-tip">限制单个文件的最大上传大小</div>
+                </el-form-item>
+
+                <el-form-item label="允许的文件类型">
+                  <div class="file-types-container">
+                    <el-checkbox-group v-model="uploadForm.allowedTypes" class="file-type-checkboxes">
+                      <el-checkbox label="jpeg" border>JPEG</el-checkbox>
+                      <el-checkbox label="png" border>PNG</el-checkbox>
+                      <el-checkbox label="gif" border>GIF</el-checkbox>
+                      <el-checkbox label="webp" border>WebP</el-checkbox>
+                    </el-checkbox-group>
+                  </div>
+                  <div class="form-tip">选择允许上传的图片文件类型</div>
+                </el-form-item>
+              </el-card>
               
-              <el-form-item class="switch-option">
-                <template #label>
-                  <div class="switch-label">
-                    <div class="switch-title">自动重命名</div>
-                    <div class="switch-description">使用时间戳和随机字符自动命名文件</div>
+              <el-card class="setting-section-card">
+                <template #header>
+                  <div class="card-header">
+                    <span>图片处理</span>
                   </div>
                 </template>
-                <el-switch v-model="uploadForm.autoRename" active-color="#3b82f6" inactive-color="#e5e7eb"></el-switch>
-              </el-form-item>
+                
+                <el-form-item label="压缩图片">
+                  <el-switch 
+                    v-model="uploadForm.compress" 
+                    active-color="#409eff" 
+                    inactive-color="#dcdfe6"
+                  ></el-switch>
+                  <div class="form-tip">上传前压缩图片以节省空间</div>
+                </el-form-item>
+                
+                <el-form-item label="压缩质量" v-if="uploadForm.compress">
+                  <div class="page-size-container">
+                    <div class="slider-container">
+                      <el-slider
+                        v-model="uploadForm.compressQuality"
+                        :min="50"
+                        :max="95"
+                        :step="5"
+                        :marks="{50: '50', 70: '70', 85: '85', 95: '95'}"
+                      />
+                    </div>
+                    <div class="page-size-display">
+                      <div class="size-value">{{ uploadForm.compressQuality }}</div>
+                      <div class="size-label">质量</div>
+                    </div>
+                  </div>
+                  <div class="form-tip">较低的值会减小文件大小，但可能降低图片质量</div>
+                </el-form-item>
+              </el-card>
               
-              <el-divider content-position="left">允许的文件类型</el-divider>
+              <el-card class="setting-section-card">
+                <template #header>
+                  <div class="card-header">
+                    <span>文件命名</span>
+                  </div>
+                </template>
+                
+                <el-form-item label="命名方式">
+                  <el-radio-group v-model="uploadForm.renameType" class="rename-radio-group">
+                    <el-radio label="original">
+                      <div class="option-with-icon">
+                        <el-icon><Document /></el-icon>
+                        <span>保留原文件名</span>
+                      </div>
+                    </el-radio>
+                    <el-radio label="timestamp">
+                      <div class="option-with-icon">
+                        <el-icon><Timer /></el-icon>
+                        <span>时间戳命名</span>
+                      </div>
+                    </el-radio>
+                    <el-radio label="uuid">
+                      <div class="option-with-icon">
+                        <el-icon><Connection /></el-icon>
+                        <span>随机字符串命名</span>
+                      </div>
+                    </el-radio>
+                  </el-radio-group>
+                  <div class="form-tip">选择上传图片的命名方式</div>
+                </el-form-item>
+                
+                <el-form-item label="自定义格式" v-if="uploadForm.renameType === 'custom'">
+                  <el-input v-model="uploadForm.customNamePattern" placeholder="例如: {year}{month}{day}_{filename}">
+                    <template #append>
+                      <el-tooltip content="支持的变量：{year}, {month}, {day}, {hour}, {minute}, {second}, {filename}" placement="top">
+                        <el-icon><InfoFilled /></el-icon>
+                      </el-tooltip>
+                    </template>
+                  </el-input>
+                  <div class="form-tip">使用变量定义自定义命名格式</div>
+                </el-form-item>
+              </el-card>
               
-              <el-form-item>
-                <div class="file-types-container">
-                  <el-checkbox-group v-model="uploadForm.allowedTypeNames" class="file-type-checkboxes">
-                    <el-checkbox label="jpeg" border>JPEG</el-checkbox>
-                    <el-checkbox label="png" border>PNG</el-checkbox>
-                    <el-checkbox label="gif" border>GIF</el-checkbox>
-                    <el-checkbox label="webp" border>WebP</el-checkbox>
-                  </el-checkbox-group>
-                </div>
-                <div class="form-tip">选择允许上传的图片文件类型</div>
-              </el-form-item>
-              
-              <el-form-item>
-                <el-button type="primary" size="large" @click="saveUploadSettings" :loading="uploadSaving">
+              <div class="form-actions">
+                <el-button type="primary" @click="saveUploadSettings" :loading="uploadSaving">
                   <el-icon><Check /></el-icon>
                   <span>保存设置</span>
                 </el-button>
-              </el-form-item>
+                <el-button @click="resetUploadSettings">
+                  <el-icon><RefreshRight /></el-icon>
+                  <span>重置</span>
+                </el-button>
+              </div>
             </el-form>
           </div>
         </el-tab-pane>
@@ -541,7 +622,8 @@ import {
   UploadFilled,
   Management,
   Moon,
-  Service
+  Service,
+  RefreshRight
 } from '@element-plus/icons-vue'
 
 // 后端API基础URL
@@ -572,7 +654,8 @@ export default {
     UploadFilled,
     Management,
     Moon,
-    Service
+    Service,
+    RefreshRight
   },
   setup() {
     const store = useStore()
@@ -607,7 +690,7 @@ export default {
       compress: true,
       compressQuality: 85,
       maxSize: 5,
-      allowTypes: ['jpg', 'jpeg', 'png', 'gif', 'webp']
+      allowedTypes: ['jpg', 'jpeg', 'png', 'gif', 'webp','heic']
     })
     
     const uploadSaving = ref(false)
@@ -730,94 +813,173 @@ export default {
     
     // 保存基本设置
     const saveBasicSettings = async () => {
-      basicSaving.value = true
+      basicSaving.value = true;
       
       try {
-        // 准备系统设置数据
-        const systemSettings = {
-          basic: {
-            markdownFormat: basicForm.markdownFormat,
-            defaultView: basicForm.defaultView,
-            sortOption: basicForm.sortOption,
-            pageSize: basicForm.pageSize
-          }
+        // 验证输入
+        if (!basicForm.markdownFormat) {
+          ElMessage.warning('请填写Markdown格式');
+          return;
         }
         
-        const response = await axios.post(`${API_BASE_URL}/settings/system`, systemSettings)
+        // 准备系统设置数据
+        const systemSettings = {
+          markdownFormat: basicForm.markdownFormat,
+          defaultView: basicForm.defaultView,
+          sortOption: basicForm.sortOption,
+          pageSize: basicForm.pageSize
+        };
+        
+        // 发送到后端API
+        const response = await axios.post(`${API_BASE_URL}/settings/system`, systemSettings);
         
         if (response.data.success) {
-          ElMessage.success('基本设置保存成功')
+          ElMessage.success('基本设置保存成功');
           
           // 更新本地Vuex存储
-          const [sortBy, sortDirection] = basicForm.sortOption.split(':')
-          store.dispatch('saveSettings', {
+          const [sortBy, sortDirection] = basicForm.sortOption.split(':');
+          store.commit('SET_SETTINGS', {
             markdownFormat: basicForm.markdownFormat,
             defaultView: basicForm.defaultView,
             sortBy,
             sortDirection,
             pageSize: basicForm.pageSize
-          })
+          });
         } else {
-          ElMessage.error(response.data.message || '保存设置失败')
+          ElMessage.error(response.data.message || '保存设置失败');
         }
       } catch (error) {
-        console.error('保存基本设置失败:', error)
-        ElMessage.error('无法保存设置，请检查网络连接')
+        console.error('保存基本设置失败:', error);
+        
+        // 显示更详细的错误信息
+        if (error.response) {
+          ElMessage.error(`保存失败: ${error.response.data?.message || '服务器响应错误'}`);
+        } else if (error.request) {
+          ElMessage.error('网络请求失败，请检查网络连接');
+        } else {
+          ElMessage.error(`保存失败: ${error.message}`);
+        }
       } finally {
-        basicSaving.value = false
+        basicSaving.value = false;
       }
-    }
+    };
+    
+    // 重置基本设置
+    const resetBasicSettings = () => {
+      ElMessageBox.confirm(
+        '确定要重置基本设置到默认值吗？',
+        '重置设置',
+        {
+          confirmButtonText: '确定',
+          cancelButtonText: '取消',
+          type: 'warning'
+        }
+      ).then(() => {
+        // 重置为默认值
+        Object.assign(basicForm, {
+          markdownFormat: '![{filename}]({url})',
+          defaultView: 'grid',
+          sortOption: 'uploadTime:desc',
+          pageSize: 20
+        });
+        
+        ElMessage.success('设置已重置为默认值');
+      }).catch(() => {
+        // 用户取消操作
+      });
+    };
     
     // 保存上传设置
     const saveUploadSettings = async () => {
-      uploadSaving.value = true
+      uploadSaving.value = true;
       
       try {
-        // 获取当前系统设置
-        let systemSettings = {}
-        try {
-          const response = await axios.get(`${API_BASE_URL}/settings/system`)
-          if (response.data.success && response.data.data) {
-            systemSettings = response.data.data
-          }
-        } catch (error) {
-          console.error('加载现有系统设置失败:', error)
+        // 验证输入
+        if (uploadForm.maxSize < 1 || uploadForm.maxSize > 20) {
+          ElMessage.warning('文件大小限制必须在1-20MB之间');
+          uploadSaving.value = false;
+          return;
         }
         
-        // 合并上传设置
-        systemSettings.upload = {
+        if (!uploadForm.allowedTypes || uploadForm.allowedTypes.length === 0) {
+          ElMessage.warning('请至少选择一种允许的文件类型');
+          uploadSaving.value = false;
+          return;
+        }
+        
+        // 准备上传设置数据
+        const uploadSettings = {
           renameType: uploadForm.renameType,
           customNamePattern: uploadForm.customNamePattern,
           compress: uploadForm.compress,
           compressQuality: uploadForm.compressQuality,
           maxSize: uploadForm.maxSize,
-          allowTypes: uploadForm.allowTypes
-        }
+          allowedTypes: uploadForm.allowedTypes
+        };
         
-        const response = await axios.post(`${API_BASE_URL}/settings/system`, systemSettings)
+        // 发送到后端API
+        const response = await axios.post(`${API_BASE_URL}/settings/system`, {
+          upload: uploadSettings
+        });
         
         if (response.data.success) {
-          ElMessage.success('上传设置保存成功')
+          ElMessage.success('上传设置保存成功');
           
           // 更新本地Vuex存储中的上传设置
-          store.dispatch('saveSettings', {
+          store.commit('SET_SETTINGS', {
             uploadConfig: {
               compress: uploadForm.compress,
+              compressQuality: uploadForm.compressQuality,
               autoRename: uploadForm.renameType !== 'original',
               maxSize: uploadForm.maxSize,
-              allowedTypes: uploadForm.allowTypes.map(type => `image/${type}`)
+              allowedTypes: uploadForm.allowedTypes.map(type => `image/${type}`)
             }
-          })
+          });
         } else {
-          ElMessage.error(response.data.message || '保存设置失败')
+          ElMessage.error(response.data.message || '保存设置失败');
         }
       } catch (error) {
-        console.error('保存上传设置失败:', error)
-        ElMessage.error('无法保存设置，请检查网络连接')
+        console.error('保存上传设置失败:', error);
+        
+        // 显示更详细的错误信息
+        if (error.response) {
+          ElMessage.error(`保存失败: ${error.response.data?.message || '服务器响应错误'}`);
+        } else if (error.request) {
+          ElMessage.error('网络请求失败，请检查网络连接');
+        } else {
+          ElMessage.error(`保存失败: ${error.message}`);
+        }
       } finally {
-        uploadSaving.value = false
+        uploadSaving.value = false;
       }
-    }
+    };
+    
+    // 重置上传设置
+    const resetUploadSettings = () => {
+      ElMessageBox.confirm(
+        '确定要重置上传设置到默认值吗？',
+        '重置设置',
+        {
+          confirmButtonText: '确定',
+          cancelButtonText: '取消',
+          type: 'warning'
+        }
+      ).then(() => {
+        // 重置为默认值
+        Object.assign(uploadForm, {
+          renameType: 'uuid',
+          customNamePattern: '{year}{month}{day}_{filename}',
+          compress: true,
+          compressQuality: 85,
+          maxSize: 5,
+          allowedTypes: ['jpeg', 'png', 'gif', 'webp']
+        });
+        
+        ElMessage.success('上传设置已重置为默认值');
+      }).catch(() => {
+        // 用户取消操作
+      });
+    };
     
     // 重置所有设置
     const resetAllSettings = () => {
@@ -855,7 +1017,7 @@ export default {
             compress: true,
             compressQuality: 85,
             maxSize: 5,
-            allowTypes: ['jpg', 'jpeg', 'png', 'gif', 'webp']
+            allowedTypes: ['jpeg', 'png', 'gif', 'webp']
           })
           
           // 保存重置后的设置到后端
@@ -897,7 +1059,9 @@ export default {
       saveBasicSettings,
       saveUploadSettings,
       resetAllSettings,
-      openProjectPage
+      openProjectPage,
+      resetBasicSettings,
+      resetUploadSettings
     }
   }
 }
@@ -1060,33 +1224,41 @@ export default {
   gap: 16px;
 }
 
-.page-size-selector {
+.page-size-container {
   display: flex;
   align-items: center;
-  gap: 24px;
+  width: 100%;
+  margin: 8px 0;
 }
 
-.page-size-slider {
+.slider-container {
   flex: 1;
-  max-width: 400px;
+  max-width: 500px;
+  margin-right: 40px;
 }
 
 .page-size-display {
   display: flex;
   flex-direction: column;
   align-items: center;
-  min-width: 80px;
+  justify-content: center;
+  width: 100px;
+  height: 70px;
+  background-color: #f5f7fa;
+  border-radius: 8px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
 }
 
 .size-value {
   font-size: 24px;
   font-weight: 600;
-  color: var(--primary-color);
+  color: #409eff;
+  margin-bottom: 4px;
 }
 
 .size-label {
   font-size: 14px;
-  color: var(--text-secondary);
+  color: #606266;
 }
 
 .about-wrapper {
@@ -1374,5 +1546,36 @@ export default {
   .form-actions .el-button {
     width: 100%;
   }
+}
+
+.setting-section-card {
+  margin-bottom: 20px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+}
+
+.setting-section-card .card-header {
+  display: flex;
+  align-items: center;
+  font-weight: 600;
+  font-size: 16px;
+}
+
+.form-actions {
+  display: flex;
+  gap: 12px;
+  margin-top: 24px;
+}
+
+.page-size-value {
+  margin-left: 10px;
+  font-size: 15px;
+  color: #606266;
+  min-width: 80px;
+}
+
+.option-with-icon {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 </style> 

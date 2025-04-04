@@ -29,7 +29,11 @@ const imageSchema = new mongoose.Schema({
   user: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
-    required: true
+    required: false
+  },
+  isAnonymous: {
+    type: Boolean,
+    default: false
   },
   isPublic: {
     type: Boolean,
@@ -58,6 +62,10 @@ const imageSchema = new mongoose.Schema({
   format: {
     type: String,
     required: true
+  },
+  ipAddress: {
+    type: String,
+    default: '未知'
   }
 }, { timestamps: true });
 

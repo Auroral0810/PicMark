@@ -474,14 +474,6 @@ exports.addImageToFolder = async (req, res) => {
       });
     }
 
-    // 检查权限
-    if (image.user && req.user && image.user.toString() !== req.user._id.toString() && req.user.role !== 'admin') {
-      return res.status(403).json({
-        success: false,
-        message: '没有权限修改此图片'
-      });
-    }
-
     // 如果folderId为null，则从文件夹中移除图片
     if (!folderId) {
       image.folder = undefined;
@@ -499,14 +491,6 @@ exports.addImageToFolder = async (req, res) => {
       return res.status(404).json({
         success: false,
         message: '文件夹不存在'
-      });
-    }
-
-    // 检查文件夹权限
-    if (folder.user && req.user && folder.user.toString() !== req.user._id.toString() && req.user.role !== 'admin') {
-      return res.status(403).json({
-        success: false,
-        message: '没有权限添加图片到此文件夹'
       });
     }
 

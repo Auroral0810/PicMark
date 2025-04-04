@@ -55,6 +55,30 @@
         <div class="bulk-actions" v-show="selectedImages.length > 0">
           <span class="selected-count">已选择 {{ selectedImages.length }} 张图片</span>
           <el-button-group>
+            <el-dropdown @command="handleBatchAddToFolder">
+              <el-button size="small">
+                <el-icon><Folder /></el-icon>
+                添加到文件夹
+                <el-icon class="el-icon--right"><arrow-down /></el-icon>
+              </el-button>
+              <template #dropdown>
+                <el-dropdown-menu>
+                  <el-dropdown-item v-for="folder in folders" :key="folder.id" :command="folder.id">
+                    {{ folder.name }}
+                  </el-dropdown-item>
+                  <el-dropdown-item v-if="folders.length === 0" disabled>暂无文件夹</el-dropdown-item>
+                  <el-dropdown-item divided command="manage-folders">
+                    <el-icon><Setting /></el-icon> 管理文件夹
+                  </el-dropdown-item>
+                </el-dropdown-menu>
+              </template>
+            </el-dropdown>
+            <el-button size="small" @click="showBatchTagDialog">
+              <el-icon><Collection /></el-icon>
+              批量添加标签
+            </el-button>
+          </el-button-group>
+          <el-button-group>
             <el-button size="small" @click="copyMultipleLinks('markdown')">
               <el-icon><Document /></el-icon>
               复制MD链接
@@ -385,6 +409,19 @@
               {{ scope.row.width }}×{{ scope.row.height }}
             </template>
           </el-table-column>
+          <el-table-column label="文件夹" width="150">
+            <template #default="scope">
+              <el-tag 
+                v-if="scope.row.folder" 
+                size="small" 
+                type="info"
+                effect="plain"
+              >
+                {{ getFolderName(scope.row.folder) }}
+              </el-tag>
+              <span v-else class="text-muted">未分类</span>
+            </template>
+          </el-table-column>
           <el-table-column label="上传时间" width="180" sortable>
             <template #default="scope">
               {{ formatDate(scope.row.uploadTime) }}
@@ -407,7 +444,7 @@
               </el-tag>
             </template>
           </el-table-column>
-          <el-table-column label="操作" fixed="right" width="240">
+          <el-table-column label="操作" fixed="right" width="260">
             <template #default="scope">
               <el-button-group>
                 <el-tooltip content="复制Markdown链接" placement="top">
@@ -543,8 +580,26 @@
               >
                 {{ tag }}
               </el-tag>
-              <el-button v-if="previewImage.tags?.length === 0" size="small" plain>
-                <el-icon><Plus /></el-icon> 添加标签
+              <el-button size="small" plain @click="editPreviewTags">
+                <el-icon><Plus /></el-icon> {{ previewImage.tags?.length === 0 ? '添加标签' : '编辑标签' }}
+              </el-button>
+            </div>
+          </div>
+          
+          <div class="preview-section">
+            <div class="section-title">文件夹</div>
+            <div class="folder-preview-info">
+              <el-tag 
+                v-if="previewImage.folder" 
+                size="small" 
+                type="info"
+                effect="plain"
+              >
+                {{ getFolderName(previewImage.folder) }}
+              </el-tag>
+              <span v-else class="text-muted">未分类</span>
+              <el-button size="small" plain class="ml-2" @click="editPreviewFolder">
+                <el-icon><Edit /></el-icon> 更改文件夹
               </el-button>
             </div>
           </div>
@@ -588,12 +643,30 @@
     <!-- 编辑图片信息对话框 -->
     <el-dialog
       v-model="editDialogVisible"
-      title="编辑图片信息"
-      width="500px"
+      :title="showTagEditOnly ? '编辑标签' : '编辑图片信息'"
+      width="600px"
+      class="edit-image-dialog"
     >
       <el-form :model="currentEditImage" label-position="top">
-        <el-form-item label="文件名">
+        <el-form-item label="文件名" v-if="!showTagEditOnly">
           <el-input v-model="currentEditImage.filename" placeholder="输入文件名"></el-input>
+        </el-form-item>
+
+        <el-form-item label="所属文件夹" v-if="!showTagEditOnly">
+          <el-select
+            v-model="currentEditImage.folder"
+            placeholder="选择文件夹"
+            clearable
+            class="w-100"
+          >
+            <el-option
+              v-for="folder in folders"
+              :key="folder.id"
+              :label="folder.name"
+              :value="folder.id"
+            />
+            <el-option value="" label="无文件夹"></el-option>
+          </el-select>
         </el-form-item>
         
         <el-form-item label="标签">
@@ -615,7 +688,7 @@
           </el-select>
         </el-form-item>
         
-        <el-form-item label="IP地址" v-if="currentEditImage.ipAddress">
+        <el-form-item label="IP地址" v-if="currentEditImage.ipAddress && !showTagEditOnly">
           <el-input v-model="currentEditImage.ipAddress" readonly></el-input>
           <div class="form-tip">IP地址不可编辑</div>
         </el-form-item>
@@ -624,7 +697,7 @@
       <template #footer>
         <div class="dialog-footer">
           <el-button @click="editDialogVisible = false">取消</el-button>
-          <el-button type="primary" @click="saveImageEdit">保存</el-button>
+          <el-button type="primary" @click="showTagEditOnly ? saveTagsOnly() : saveImageEdit()">保存</el-button>
         </div>
       </template>
     </el-dialog>
@@ -650,18 +723,18 @@
     
     <!-- 批量删除确认对话框 -->
     <el-dialog
-      v-model="batchDeleteDialogVisible"
-      title="批量删除确认"
+      v-model="deleteMultipleDialogVisible"
+      title="批量删除图片"
       width="400px"
     >
       <div class="delete-confirmation">
         <p>确定要删除选中的 {{ selectedImages.length }} 张图片吗？</p>
-        <p class="delete-warning">此操作不可撤销，图片将从存储中永久删除。</p>
+        <p class="delete-warning">此操作将永久删除这些图片，无法恢复！</p>
       </div>
       
       <template #footer>
         <div class="dialog-footer">
-          <el-button @click="batchDeleteDialogVisible = false">取消</el-button>
+          <el-button @click="deleteMultipleDialogVisible = false">取消</el-button>
           <el-button type="danger" @click="deleteMultipleImages">确认删除</el-button>
         </div>
       </template>
@@ -826,11 +899,88 @@
         </div>
       </template>
     </el-dialog>
+    
+    <!-- 批量添加标签对话框 -->
+    <el-dialog
+      v-model="batchTagDialogVisible"
+      title="批量添加标签"
+      width="500px"
+    >
+      <div class="batch-tag-dialog">
+        <p class="dialog-description">为选中的 {{ selectedImages.length }} 张图片批量添加标签</p>
+        
+        <el-form :model="batchTagForm">
+          <el-form-item label="添加标签">
+            <el-select
+              v-model="batchTagForm.tags"
+              multiple
+              filterable
+              allow-create
+              default-first-option
+              placeholder="添加或选择标签"
+              class="w-100"
+            >
+              <el-option
+                v-for="tag in availableTags"
+                :key="tag"
+                :label="tag"
+                :value="tag"
+              />
+            </el-select>
+          </el-form-item>
+          
+          <el-form-item>
+            <el-radio v-model="batchTagForm.mode" label="add">添加到现有标签</el-radio>
+            <el-radio v-model="batchTagForm.mode" label="replace">替换现有标签</el-radio>
+          </el-form-item>
+        </el-form>
+      </div>
+      
+      <template #footer>
+        <div class="dialog-footer">
+          <el-button @click="batchTagDialogVisible = false">取消</el-button>
+          <el-button type="primary" @click="applyBatchTags">应用标签</el-button>
+        </div>
+      </template>
+    </el-dialog>
+    
+    <!-- 添加文件夹选择对话框 -->
+    <el-dialog
+      v-model="showFolderSelectDialog"
+      title="选择文件夹"
+      width="400px"
+    >
+      <el-form>
+        <el-form-item label="选择文件夹">
+          <el-select
+            v-model="selectedFolder"
+            placeholder="选择文件夹"
+            clearable
+            style="width: 100%"
+          >
+            <el-option
+              v-for="folder in folders"
+              :key="folder.id"
+              :label="folder.name"
+              :value="folder.id"
+            />
+            <el-option value="" label="无文件夹"></el-option>
+          </el-select>
+        </el-form-item>
+      </el-form>
+      
+      <template #footer>
+        <div class="dialog-footer">
+          <el-button @click="showFolderSelectDialog = false">取消</el-button>
+          <el-button type="primary" @click="saveSelectedFolder">保存</el-button>
+        </div>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script>
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, computed, onMounted, watch, onUnmounted } from 'vue'
 import { useStore } from 'vuex'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
@@ -992,12 +1142,20 @@ export default {
       return (size / Math.pow(1024, i)).toFixed(2) + ' ' + units[i]
     }
     
+    // 格式化日期的方法
     const formatDate = (date) => {
       if (!date) return ''
       const d = new Date(date)
       const dateStr = d.toLocaleDateString()
       const timeStr = d.toLocaleTimeString()
       return `${dateStr} ${timeStr}`
+    }
+    
+    // 获取文件夹名称
+    const getFolderName = (folderId) => {
+      if (!folderId) return '未分类'
+      const folder = folders.value.find(f => f.id === folderId)
+      return folder ? folder.name : '未知文件夹'
     }
     
     const copyMarkdownLink = (image) => {
@@ -1134,140 +1292,38 @@ export default {
     // 多选相关状态
     const multiSelectMode = ref(false)
     const selectedImages = ref([])
-    const batchDeleteDialogVisible = ref(false)
+    const isIndeterminate = ref(false)
+    const selectAll = ref(false)
     
-    // 判断图片是否被选中
-    const isSelected = (image) => {
-      return selectedImages.value.some(img => img.id === image.id)
+    const toggleMultiSelectMode = () => {
+      multiSelectMode.value = !multiSelectMode.value
+      if (!multiSelectMode.value) {
+        clearSelection()
+      }
     }
     
-    // 更新选中状态
-    const updateSelection = (image, isChecked) => {
-      if (isChecked) {
-        if (!isSelected(image)) {
+    const updateSelection = (image, selected) => {
+      image.selected = selected
+      if (selected) {
+        if (!selectedImages.value.some(img => img.id === image.id)) {
           selectedImages.value.push(image)
         }
       } else {
         selectedImages.value = selectedImages.value.filter(img => img.id !== image.id)
       }
-    }
-    
-    // 处理图片点击事件
-    const handleImageClick = (image) => {
-      // 如果是多选模式或已有选中图片，则切换选中状态
-      if (multiSelectMode.value || selectedImages.value.length > 0) {
-        image.selected = !image.selected
-        updateSelection(image, image.selected)
-        return
-      }
       
-      // 否则，预览图片
-      showPreviewImage(image)
+      // 更新全选状态
+      updateSelectAllState()
     }
     
-    // 切换多选模式
-    const toggleMultiSelectMode = () => {
-      multiSelectMode.value = !multiSelectMode.value
-      if (!multiSelectMode.value && selectedImages.value.length === 0) {
-        clearSelection()
-      }
-    }
-    
-    // 清除所有选择
-    const clearSelection = () => {
-      currentImages.value.forEach(img => img.selected = false)
-      selectedImages.value = []
-      multiSelectMode.value = false
-    }
-    
-    // 表格选择变化处理
-    const handleSelectionChange = (selection) => {
-      selectedImages.value = selection
-    }
-    
-    // 复制多个图片链接
-    const copyMultipleLinks = (type) => {
-      if (selectedImages.value.length === 0) return
+    const updateSelectAllState = () => {
+      const totalImages = currentImages.value.length
+      const selectedCount = selectedImages.value.length
       
-      let content = ''
-      
-      switch(type) {
-        case 'markdown':
-          content = selectedImages.value
-            .map(image => {
-              const format = store.state.settings.markdownFormat
-              return format
-                .replace('{filename}', image.filename)
-                .replace('{url}', image.url)
-            })
-            .join('\n')
-          break
-        case 'html':
-          content = selectedImages.value
-            .map(image => `<img src="${image.url}" alt="${image.filename}" width="${image.width}" height="${image.height}" data-size="${formatFileSize(image.size)}" data-upload-time="${formatDate(image.uploadTime)}" ${image.ipAddress ? `data-ip="${image.ipAddress}"` : ''} />`)
-            .join('\n')
-          break
-        case 'plain':
-        default:
-          content = selectedImages.value
-            .map(image => image.url)
-            .join('\n')
-          break
-      }
-      
-      navigator.clipboard.writeText(content).then(() => {
-        ElMessage.success(`已成功复制${selectedImages.value.length}个链接到剪贴板`)
-      }).catch(err => {
-        console.error('复制失败:', err)
-        ElMessage.error('复制失败')
-      })
+      selectAll.value = selectedCount > 0 && selectedCount === totalImages
+      isIndeterminate.value = selectedCount > 0 && selectedCount < totalImages
     }
     
-    // 批量删除确认
-    const confirmDeleteMultiple = () => {
-      if (selectedImages.value.length === 0) return
-      batchDeleteDialogVisible.value = true
-    }
-    
-    // 批量删除图片
-    const deleteMultipleImages = async () => {
-      if (selectedImages.value.length === 0) return
-      
-      try {
-        let success = 0
-        let failed = 0
-        
-        for (const image of selectedImages.value) {
-          try {
-            await store.dispatch('deleteImage', image.id)
-            success++
-          } catch (err) {
-            console.error(`删除图片 ${image.id} 失败:`, err)
-            failed++
-          }
-        }
-        
-        batchDeleteDialogVisible.value = false
-        clearSelection()
-        
-        if (failed === 0) {
-          ElMessage.success(`成功删除 ${success} 张图片`)
-        } else {
-          ElMessage.warning(`操作完成: ${success} 张图片删除成功, ${failed} 张图片删除失败`)
-        }
-      } catch (error) {
-        ElMessage.error('批量删除失败')
-        console.error('批量删除失败:', error)
-      }
-    }
-    
-    // 全选相关
-    const selectAll = ref(false)
-    const isIndeterminate = computed(() => {
-      return selectedImages.value.length > 0 && selectedImages.value.length < currentImages.value.length
-    })
-    
-    // 处理全选/取消全选
     const handleSelectAllChange = (val) => {
       currentImages.value.forEach(image => {
         image.selected = val
@@ -1275,11 +1331,161 @@ export default {
       })
     }
     
-    // 监听选中项变化，更新全选状态
-    watch(selectedImages, (newVal) => {
-      const allSelected = currentImages.value.length > 0 && newVal.length === currentImages.value.length
-      selectAll.value = allSelected
+    const clearSelection = () => {
+      currentImages.value.forEach(image => {
+        image.selected = false
+      })
+      selectedImages.value = []
+      selectAll.value = false
+      isIndeterminate.value = false
+    }
+    
+    const isSelected = (image) => {
+      return selectedImages.value.some(img => img.id === image.id)
+    }
+    
+    const handleImageClick = (image) => {
+      if (multiSelectMode.value || selectedImages.value.length > 0) {
+        image.selected = !image.selected
+        updateSelection(image, image.selected)
+      } else {
+        showPreviewImage(image)
+      }
+    }
+    
+    const handleSelectionChange = (selection) => {
+      selectedImages.value = selection
+      updateSelectAllState()
+    }
+    
+    // 批量操作方法
+    const copyMultipleLinks = (type) => {
+      if (selectedImages.value.length === 0) return
+      
+      let links = ''
+      
+      switch (type) {
+        case 'markdown':
+          links = selectedImages.value.map(image => {
+            const format = store.state.settings.markdownFormat
+            return format
+              .replace('{filename}', image.filename)
+              .replace('{url}', image.url)
+          }).join('\n')
+          break
+          
+        case 'html':
+          links = selectedImages.value.map(image => {
+            return `<img src="${image.url}" alt="${image.filename}" width="${image.width}" height="${image.height}" data-size="${formatFileSize(image.size)}" data-upload-time="${formatDate(image.uploadTime)}" ${image.ipAddress ? `data-ip="${image.ipAddress}"` : ''} />`
+          }).join('\n')
+          break
+          
+        case 'plain':
+          links = selectedImages.value.map(image => image.url).join('\n')
+          break
+      }
+      
+      navigator.clipboard.writeText(links).then(() => {
+        ElMessage.success(`已复制${selectedImages.value.length}个链接到剪贴板`)
+      }).catch(err => {
+        console.error('复制失败:', err)
+        ElMessage.error('复制失败')
+      })
+    }
+    
+    // 批量删除相关
+    const deleteMultipleDialogVisible = ref(false)
+    
+    const confirmDeleteMultiple = () => {
+      if (selectedImages.value.length === 0) return
+      deleteMultipleDialogVisible.value = true
+    }
+    
+    const deleteMultipleImages = async () => {
+      try {
+        const imageIds = selectedImages.value.map(img => img.id)
+        await Promise.all(imageIds.map(id => store.dispatch('deleteImage', id)))
+        
+        ElMessage.success(`成功删除${imageIds.length}张图片`)
+        deleteMultipleDialogVisible.value = false
+        clearSelection()
+      } catch (error) {
+        console.error('批量删除失败:', error)
+        ElMessage.error('批量删除失败')
+      }
+    }
+    
+    // 批量添加到文件夹
+    const handleBatchAddToFolder = async (folderId) => {
+      if (folderId === 'manage-folders') {
+        showFolderManager.value = true
+        return
+      }
+      
+      if (selectedImages.value.length === 0) return
+      
+      try {
+        const imageIds = selectedImages.value.map(img => img.id)
+        // 使用Promise.allSettled代替Promise.all以避免一个失败导致全部失败
+        await Promise.allSettled(imageIds.map(imageId => 
+          store.dispatch('moveImageToFolder', { imageId, folderId })
+        ))
+        
+        const folderName = folders.value.find(f => f.id === folderId)?.name || '文件夹'
+        ElMessage.success(`已将${imageIds.length}张图片添加到${folderName}`)
+        
+        // 更新图片列表
+        await store.dispatch('fetchImages')
+      } catch (error) {
+        console.error('批量添加到文件夹失败:', error)
+        ElMessage.error('批量添加到文件夹失败')
+      }
+    }
+    
+    // 批量标签相关
+    const batchTagDialogVisible = ref(false)
+    const batchTagForm = ref({
+      tags: [],
+      mode: 'add' // 'add' 或 'replace'
     })
+    
+    const showBatchTagDialog = () => {
+      if (selectedImages.value.length === 0) return
+      
+      batchTagForm.value = {
+        tags: [],
+        mode: 'add'
+      }
+      
+      batchTagDialogVisible.value = true
+    }
+    
+    const applyBatchTags = async () => {
+      try {
+        const { tags, mode } = batchTagForm.value
+        
+        if (!tags || tags.length === 0) {
+          ElMessage.warning('请至少添加一个标签')
+          return
+        }
+        
+        // 使用store里的批量更新标签方法
+        await store.dispatch('batchUpdateTags', {
+          imageIds: selectedImages.value.map(img => img.id),
+          tags,
+          mode
+        })
+        
+        ElMessage.success(`已为${selectedImages.value.length}张图片${mode === 'add' ? '添加' : '设置'}标签`)
+        batchTagDialogVisible.value = false
+        
+        // 刷新图片列表
+        await store.dispatch('fetchImages')
+      } catch (error) {
+        console.error('批量添加标签失败:', error)
+        ElMessage.error('批量添加标签失败')
+      }
+    }
     
     // 文件夹管理相关
     const showFolderManager = ref(false)
@@ -1391,7 +1597,14 @@ export default {
       // 设置筛选条件为当前文件夹
       store.commit('SET_FILTERS', { folderId: folder.id })
       showFolderManager.value = false
+      
+      // 重新获取图片列表以显示筛选后的结果
+      store.dispatch('fetchImages')
+      
       ElMessage.success(`正在查看文件夹: ${folder.name}`)
+      
+      // 重置分页
+      currentPage.value = 1
     }
     
     // 打开创建标签对话框
@@ -1466,6 +1679,20 @@ export default {
       }
     })
     
+    // 组件卸载时清理资源
+    onUnmounted(() => {
+      // 清理可能的事件监听
+      if (isDragging) {
+        isDragging = false;
+      }
+      
+      // 重置状态，避免引用已销毁的组件
+      previewImage.value = {};
+      selectedImages.value = [];
+      currentEditImage.value = null;
+      currentDeleteImage.value = null;
+    })
+    
     // 监听视图模式变化，保存到本地存储
     watch(viewMode, (newValue) => {
       localStorage.setItem('viewMode', newValue)
@@ -1476,6 +1703,78 @@ export default {
       store.commit('SET_PAGINATION', { currentPage: newValue })
     })
     
+    // 在当前代码基础上添加预览编辑相关函数
+    const editPreviewTags = () => {
+      currentEditImage.value = JSON.parse(JSON.stringify(previewImage.value))
+      // 只显示标签编辑部分
+      showTagEditOnly.value = true
+      editDialogVisible.value = true
+    }
+
+    const editPreviewFolder = () => {
+      showFolderSelectDialog.value = true
+      selectedFolder.value = previewImage.value.folder || ''
+    }
+
+    // 文件夹选择对话框相关
+    const showFolderSelectDialog = ref(false)
+    const selectedFolder = ref('')
+
+    // 保存选择的文件夹
+    const saveSelectedFolder = async () => {
+      try {
+        // 移除强制token验证
+        /* 
+        const token = localStorage.getItem('token')
+        if (!token) {
+          ElMessage.warning('请先登录')
+          return
+        }
+        */
+
+        await store.dispatch('moveImageToFolder', { 
+          imageId: previewImage.value.id, 
+          folderId: selectedFolder.value
+          // 移除token参数
+          // token
+        })
+        
+        // 更新预览图片的文件夹
+        previewImage.value.folder = selectedFolder.value
+        ElMessage.success('文件夹已更新')
+        showFolderSelectDialog.value = false
+        
+        // 刷新图片列表
+        await store.dispatch('fetchImages')
+      } catch (error) {
+        console.error('更新文件夹失败:', error)
+        ElMessage.error('更新文件夹失败')
+      }
+    }
+
+    // 控制标签编辑UI
+    const showTagEditOnly = ref(false)
+
+    // 只修改标签信息
+    const saveTagsOnly = async () => {
+      try {
+        // 只更新标签字段
+        await store.dispatch('updateImageTags', {
+          id: currentEditImage.value.id,
+          tags: currentEditImage.value.tags
+        })
+        
+        // 更新预览中的标签
+        previewImage.value.tags = [...currentEditImage.value.tags]
+        ElMessage.success('标签已更新')
+        editDialogVisible.value = false
+        showTagEditOnly.value = false
+      } catch (error) {
+        console.error('更新标签失败:', error)
+        ElMessage.error('更新标签失败')
+      }
+    }
+
     return {
       viewMode,
       loading,
@@ -1500,6 +1799,7 @@ export default {
       handlePageChange,
       formatFileSize,
       formatDate,
+      getFolderName,
       copyMarkdownLink,
       copyImageUrl,
       editImage,
@@ -1536,20 +1836,20 @@ export default {
       stopDrag,
       multiSelectMode,
       selectedImages,
-      batchDeleteDialogVisible,
-      isSelected,
-      updateSelection,
-      handleImageClick,
+      isIndeterminate,
+      selectAll,
       toggleMultiSelectMode,
+      updateSelection,
+      updateSelectAllState,
+      handleSelectAllChange,
       clearSelection,
+      isSelected,
+      handleImageClick,
       handleSelectionChange,
       copyMultipleLinks,
       confirmDeleteMultiple,
       deleteMultipleImages,
-      selectAll,
-      isIndeterminate,
-      handleSelectAllChange,
-      // 文件夹相关
+      handleBatchAddToFolder,
       showFolderManager,
       showFolderEditDialog,
       folderEditMode,
@@ -1564,7 +1864,6 @@ export default {
       deleteFolder,
       viewFolderImages,
       fetchFolders,
-      // 标签相关
       showTagManager,
       showTagEditDialog,
       tagEditMode,
@@ -1577,6 +1876,18 @@ export default {
       confirmDeleteTag,
       deleteTag,
       viewTagImages,
+      deleteMultipleDialogVisible,
+      batchTagDialogVisible,
+      batchTagForm,
+      showBatchTagDialog,
+      applyBatchTags,
+      showFolderSelectDialog,
+      selectedFolder,
+      saveSelectedFolder,
+      editPreviewTags,
+      editPreviewFolder,
+      showTagEditOnly,
+      saveTagsOnly,
     }
   }
 }
@@ -1584,49 +1895,127 @@ export default {
 
 <style scoped>
 .gallery-container {
+  max-width: 1600px;
+  margin: 0 auto;
   padding: 24px;
-  background-color: var(--bg-color, #fff);
-  border-radius: 12px;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.05);
+  background-color: #f8f9fa;
+  min-height: 100vh;
   display: flex;
   flex-direction: column;
-  height: 100%;
 }
 
 .gallery-header {
+  background-color: #fff;
+  border-radius: 12px;
+  padding: 20px 24px;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.05);
+  margin-bottom: 24px;
+}
+
+.gallery-content {
+  background-color: #fff;
+  border-radius: 12px;
+  padding: 24px;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.05);
+  flex-grow: 1;
+}
+
+.gallery-footer {
+  background-color: #fff;
+  border-radius: 12px;
+  padding: 16px 24px;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.05);
+  margin-top: 24px;
   display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 32px;
-  padding-bottom: 16px;
-  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+  justify-content: flex-end;
+}
+
+.el-table {
+  border-radius: 10px;
+  overflow: hidden;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+  margin-top: 16px;
+}
+
+.el-table .el-table__header-wrapper {
+  background-color: #f5f7fa;
+}
+
+.el-table th {
+  background-color: #f5f7fa;
+  color: #606266;
+  font-weight: 600;
+}
+
+.el-table .table-row {
+  transition: all 0.25s ease;
+}
+
+.el-table .table-row:hover {
+  background-color: #f0f7ff !important;
+}
+
+.el-dialog.edit-image-dialog .el-form-item {
+  margin-bottom: 24px;
+}
+
+.text-muted {
+  color: #909399;
+  font-size: 13px;
+}
+
+.edit-image-dialog .el-select {
+  width: 100%;
+}
+
+/* 文件夹标签 */
+.el-tag.el-tag--info.el-tag--plain {
+  border-color: #e0e2e6;
+  background-color: #f4f4f5;
+  color: #606266;
+  padding: 0 8px;
+  height: 24px;
+  line-height: 22px;
+}
+
+/* 操作按钮组 */
+.el-button-group .el-button {
+  margin: 0 2px;
+  padding: 8px 12px;
+}
+
+.el-button-group .el-button:hover {
+  z-index: 1;
 }
 
 .header-left {
-  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 24px;
+}
+
+.header-title {
+  margin-bottom: 0;
+}
+
+.page-title {
+  margin: 0 0 6px 0;
+  font-size: 24px;
+  font-weight: 600;
+  color: #303133;
+}
+
+.text-secondary {
+  color: #909399;
+  margin: 0;
+  font-size: 14px;
 }
 
 .header-right {
   display: flex;
-  gap: 20px;
   align-items: center;
-}
-
-.header-title {
-  flex: 1;
-}
-
-.page-title {
-  font-size: 28px;
-  font-weight: 600;
-  color: var(--text-primary, #1f2937);
-  margin: 0 0 8px 0;
-}
-
-.text-secondary {
-  color: var(--text-secondary, #6b7280);
-  font-size: 14px;
-  margin: 0;
+  flex-wrap: wrap;
+  gap: 12px;
 }
 
 /* 搜索框样式 */
@@ -1837,7 +2226,8 @@ export default {
   left: 0;
   width: 100%;
   height: 100%;
-  object-fit: cover;
+  object-fit: contain;
+  background-color: #f5f7fa;
   transition: transform 0.5s ease;
 }
 
@@ -1922,16 +2312,24 @@ export default {
 /* 列表视图样式 */
 .table-image-preview {
   width: 80px;
-  height: 60px;
-  border-radius: var(--border-radius-base);
+  height: 45px;
+  border-radius: 4px;
   overflow: hidden;
   cursor: pointer;
+  border: 1px solid #ebeef5;
+  transition: all 0.25s ease;
+}
+
+.table-image-preview:hover {
+  transform: scale(1.05);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
 }
 
 .table-image-preview img {
   width: 100%;
   height: 100%;
-  object-fit: cover;
+  object-fit: contain;
+  background-color: #f5f7fa;
 }
 
 /* 分页区域 */
@@ -1991,12 +2389,14 @@ export default {
   justify-content: center;
   height: 100%;
   width: calc(100% - 320px);
+  min-height: 300px; /* 添加最小高度 */
 }
 
 .preview-image-container img {
   max-height: 80vh;
   max-width: 100%;
   object-fit: contain;
+  background-color: rgba(0, 0, 0, 0.1); /* 添加轻微背景颜色以便区分图片边界 */
 }
 
 .preview-sidebar {

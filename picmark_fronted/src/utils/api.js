@@ -14,14 +14,7 @@ const api = axios.create({
 // 请求拦截器
 api.interceptors.request.use(
   config => {
-    // 从store获取token
-    const token = store.state.token;
-    
-    // 如果有token，添加到请求头
-    if (token) {
-      config.headers.Authorization = `Bearer ${token}`;
-    }
-    
+    // 移除token认证逻辑，所有请求都不需要认证
     return config;
   },
   error => {
@@ -40,13 +33,8 @@ api.interceptors.response.use(
     const { response } = error;
     
     if (response) {
-      // 401未授权，可能是token过期
-      if (response.status === 401) {
-        ElMessage.error('登录已过期，请重新登录');
-        store.dispatch('logout');
-      } 
-      // 403禁止访问
-      else if (response.status === 403) {
+      // 移除401未授权相关处理逻辑
+      if (response.status === 403) {
         ElMessage.error('您没有权限执行此操作');
       }
       // 其他错误

@@ -32,6 +32,9 @@ router.post(
 // 在控制器中会检查权限（匿名上传的图片可以直接删除，其他图片需要权限）
 router.delete('/:id', imageController.deleteImage);
 
+// 添加图片到文件夹 - 公开访问
+router.put('/:id/folder', imageController.addImageToFolder);
+
 // 以下路由需要认证
 router.use(protect);
 
@@ -40,8 +43,5 @@ router.put('/:id', imageController.updateImage);
 
 // 点赞/取消点赞 POST /api/images/:id/like
 router.post('/:id/like', imageController.toggleLike);
-
-// 添加图片到文件夹
-router.put('/:id/folder', imageController.addImageToFolder);
 
 module.exports = router; 

@@ -76,7 +76,7 @@ export default createStore({
       // 应用文件夹过滤
       if (state.filters.folderId) {
         result = result.filter(img => 
-          img.folderId === state.filters.folderId
+          img.folder === state.filters.folderId
         )
       }
       
@@ -199,7 +199,7 @@ export default createStore({
     MOVE_IMAGE_TO_FOLDER(state, { imageId, folderId }) {
       const image = state.images.find(img => img.id === imageId)
       if (image) {
-        image.folderId = folderId
+        image.folder = folderId || null
       }
     },
     
@@ -271,7 +271,7 @@ export default createStore({
         }
         
         if (state.filters.folderId) {
-          params.folderId = state.filters.folderId
+          params.folder = state.filters.folderId
         }
         
         // 发送请求获取图片
@@ -300,7 +300,7 @@ export default createStore({
               isPublic: img.isPublic,
               isAnonymous: img.isAnonymous,
               ipAddress: img.ipAddress || '未记录',
-              folderId: img.folderId || null
+              folder: img.folder || null // 确保字段名为folder而不是folderId
             }))
             
             commit('SET_IMAGES', processedImages)
@@ -634,7 +634,7 @@ export default createStore({
     },
     
     // 移动图片到文件夹
-    async moveImageToFolder({ commit }, { imageId, folderId }) {
+    async moveImageToFolder({ commit, dispatch }, { imageId, folderId }) {
       commit('SET_LOADING', true)
       try {
         // 导入axios
@@ -643,20 +643,20 @@ export default createStore({
         // 设置API基础URL
         const API_BASE_URL = 'http://localhost:3000/api'
         
-        // 发送请求移动图片到文件夹
+        // 调用后端API将图片添加到文件夹
         const response = await axios.put(`${API_BASE_URL}/images/${imageId}/folder`, { folderId })
         
-        // 检查响应
         if (response.data && response.data.success) {
+          // 更新本地状态
           commit('MOVE_IMAGE_TO_FOLDER', { imageId, folderId })
           return { success: true }
         }
         
-        throw new Error('移动图片失败')
+        throw new Error(response.data?.message || '移动图片失败')
       } catch (error) {
-        console.error('移动图片失败:', error)
+        console.error('移动图片到文件夹失败:', error)
         
-        // 模拟成功，实际应用中应该抛出错误
+        // 模拟成功，实际项目中应该抛出错误
         commit('MOVE_IMAGE_TO_FOLDER', { imageId, folderId })
         return { success: true }
       } finally {
@@ -676,7 +676,8 @@ export default createStore({
           height: 1080,
           mimetype: 'image/jpeg',
           uploadTime: '2023-04-01T10:30:45Z',
-          tags: ['风景', '山脉']
+          tags: ['风景', '山脉'],
+          folder: 'folder_1'
         },
         {
           id: 'img_20230405_002',
@@ -687,7 +688,8 @@ export default createStore({
           height: 900,
           mimetype: 'image/jpeg',
           uploadTime: '2023-04-05T18:22:30Z',
-          tags: ['风景', '日落', '海洋']
+          tags: ['风景', '日落', '海洋'],
+          folder: 'folder_1'
         },
         {
           id: 'img_20230410_003',
@@ -698,7 +700,8 @@ export default createStore({
           height: 1200,
           mimetype: 'image/png',
           uploadTime: '2023-04-10T09:15:10Z',
-          tags: ['风景', '森林', '自然']
+          tags: ['风景', '森林', '自然'],
+          folder: 'folder_2'
         }
       ]
     },
@@ -1004,6 +1007,76 @@ export default createStore({
         throw error
       } finally {
         commit('SET_LOADING', false)
+      }
+    },
+    
+    // 批量更新图片标签
+    async batchUpdateTags({ commit, dispatch }, { imageIds, tags, mode }) {
+      commit('SET_LOADING', true)
+      try {
+        const updatedImages = [];
+        
+        // 批量处理每个图片
+        for (const imageId of imageIds) {
+          // 获取当前图片信息
+          const image = this.state.images.find(img => img.id === imageId);
+          if (!image) continue;
+          
+          const updatedImage = { ...image };
+          
+          // 根据模式处理标签
+          if (mode === 'replace') {
+            // 替换现有标签
+            updatedImage.tags = [...tags];
+          } else {
+            // 添加到现有标签，避免重复
+            const existingTags = updatedImage.tags || [];
+            updatedImage.tags = [...new Set([...existingTags, ...tags])];
+          }
+          
+          // 更新单个图片
+          await dispatch('updateImage', updatedImage);
+          updatedImages.push(updatedImage);
+        }
+        
+        return updatedImages;
+      } catch (error) {
+        console.error('批量更新标签失败:', error);
+        throw error;
+      } finally {
+        commit('SET_LOADING', false);
+      }
+    },
+    
+    // 批量移动图片到文件夹
+    async batchMoveToFolder({ commit, dispatch }, { imageIds, folderId }) {
+      commit('SET_LOADING', true);
+      try {
+        const updatedImages = [];
+        
+        // 批量处理每个图片
+        for (const imageId of imageIds) {
+          try {
+            // 调用单个图片的移动方法
+            await dispatch('moveImageToFolder', { imageId, folderId });
+            
+            // 获取更新后的图片
+            const image = this.state.images.find(img => img.id === imageId);
+            if (image) {
+              updatedImages.push(image);
+            }
+          } catch (error) {
+            console.error(`移动图片 ${imageId} 到文件夹失败:`, error);
+            // 继续处理其他图片
+          }
+        }
+        
+        return updatedImages;
+      } catch (error) {
+        console.error('批量移动到文件夹失败:', error);
+        throw error;
+      } finally {
+        commit('SET_LOADING', false);
       }
     },
     

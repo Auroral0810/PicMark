@@ -1,0 +1,36 @@
+<svg width="200" height="200" viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
+  <!-- 圆形背景 -->
+  <circle cx="100" cy="100" r="95" fill="#f0f8ff" stroke="#3498db" stroke-width="5"/>
+  
+  <!-- 更饱满的艺术字母 P -->
+  <path d="M55 50 C55 45 60 40 65 40 L110 40 C140 40 145 60 145 75 C145 95 130 110 110 110 L85 110 L85 155 C85 162 75 162 70 160 C65 158 55 155 55 150 Z" 
+        fill="#3498db" stroke="#2980b9" stroke-width="3"/>
+  <path d="M85 65 L110 65 C115 65 120 68 120 75 C120 82 115 85 110 85 L85 85 Z" 
+        fill="#f0f8ff"/>
+  
+  <!-- 超可爱的小鱼 -->
+  <g transform="translate(140, 140) rotate(45) scale(0.6)">
+    <!-- 鱼身 - 更圆润 -->
+    <path d="M0 0 Q28 -14 48 0 Q28 14 0 0 Z" fill="#ff7979" stroke="#e74c3c" stroke-width="2"/>
+    <!-- 鱼尾 - 更可爱的弧度 -->
+    <path d="M0 0 Q-10 -8 -18 -12 Q-10 0 -18 12 Q-10 8 0 0 Z" fill="#ff7979" stroke="#e74c3c" stroke-width="2"/>
+    <!-- 鱼眼 - 更大更可爱 -->
+    <circle cx="32" cy="-3" r="4" fill="white"/>
+    <circle cx="32" cy="-3" r="2.5" fill="#333"/>
+    <circle cx="31" cy="-4" r="0.8" fill="white"/>
+    <!-- 更多的鱼鳍 -->
+    <path d="M20 -8 Q25 -16 15 -18" fill="#ff7979" stroke="#e74c3c" stroke-width="1.5"/>
+    <path d="M20 8 Q25 16 15 18" fill="#ff7979" stroke="#e74c3c" stroke-width="1.5"/>
+    <!-- 小鱼微笑 -->
+    <path d="M38 2 Q40 4 42 2" fill="none" stroke="#e74c3c" stroke-width="1.5" stroke-linecap="round"/>
+  </g>
+  
+  <!-- 更多可爱的水泡 -->
+  <circle cx="125" cy="125" r="4" fill="#a6dcef" opacity="0.8"/>
+  <circle cx="135" cy="115" r="3" fill="#a6dcef" opacity="0.7"/>
+  <circle cx="115" cy="105" r="5" fill="#a6dcef" opacity="0.6"/>
+  <circle cx="145" cy="130" r="2.5" fill="#a6dcef" opacity="0.9"/>
+  
+  <!-- 可爱的小星星点缀 -->
+  <path d="M160 70 L162 75 L167 75 L163 78 L165 83 L160 80 L155 83 L157 78 L153 75 L158 75 Z" fill="#FFD700" opacity="0.7"/>
+</svg>

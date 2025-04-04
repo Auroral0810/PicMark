@@ -66,6 +66,11 @@ const imageSchema = new mongoose.Schema({
   ipAddress: {
     type: String,
     default: '未知'
+  },
+  folder: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Folder',
+    required: false
   }
 }, { timestamps: true });
 

@@ -34,6 +34,23 @@
           </el-input>
         </div>
         
+        <!-- 文件夹和标签管理按钮 -->
+        <el-button 
+          size="small" 
+          @click="showFolderManager = true"
+        >
+          <el-icon><Folder /></el-icon>
+          文件夹管理
+        </el-button>
+        
+        <el-button 
+          size="small" 
+          @click="showTagManager = true"
+        >
+          <el-icon><Collection /></el-icon>
+          标签管理
+        </el-button>
+        
         <!-- 批量操作与多选 -->
         <div class="bulk-actions" v-show="selectedImages.length > 0">
           <span class="selected-count">已选择 {{ selectedImages.length }} 张图片</span>
@@ -649,6 +666,166 @@
         </div>
       </template>
     </el-dialog>
+    
+    <!-- 文件夹管理对话框 -->
+    <el-dialog
+      v-model="showFolderManager"
+      title="文件夹管理"
+      width="800px"
+    >
+      <div class="folder-manager">
+        <div class="folder-list-header">
+          <h3>我的文件夹</h3>
+          <el-button type="primary" size="small" @click="openCreateFolderDialog">
+            <el-icon><Plus /></el-icon> 创建文件夹
+          </el-button>
+        </div>
+        
+        <el-table
+          :data="folders"
+          style="width: 100%"
+        >
+          <el-table-column prop="name" label="文件夹名称" />
+          <el-table-column prop="imageCount" label="图片数量" width="100" />
+          <el-table-column prop="createdAt" label="创建时间" width="180">
+            <template #default="scope">
+              {{ formatDate(scope.row.createdAt) }}
+            </template>
+          </el-table-column>
+          <el-table-column label="操作" width="220">
+            <template #default="scope">
+              <el-button-group>
+                <el-button size="small" @click="viewFolderImages(scope.row)">
+                  <el-icon><View /></el-icon>
+                </el-button>
+                <el-button size="small" @click="editFolder(scope.row)">
+                  <el-icon><Edit /></el-icon>
+                </el-button>
+                <el-button size="small" type="danger" @click="confirmDeleteFolder(scope.row)">
+                  <el-icon><Delete /></el-icon>
+                </el-button>
+              </el-button-group>
+            </template>
+          </el-table-column>
+        </el-table>
+      </div>
+    </el-dialog>
+    
+    <!-- 创建/编辑文件夹对话框 -->
+    <el-dialog
+      v-model="showFolderEditDialog"
+      :title="folderEditMode === 'create' ? '创建文件夹' : '编辑文件夹'"
+      width="500px"
+    >
+      <el-form :model="currentFolder" label-position="top">
+        <el-form-item label="文件夹名称" required>
+          <el-input v-model="currentFolder.name" placeholder="请输入文件夹名称"></el-input>
+        </el-form-item>
+        <el-form-item label="描述">
+          <el-input 
+            v-model="currentFolder.description" 
+            type="textarea" 
+            placeholder="请输入文件夹描述（可选）"
+            :rows="3"
+          ></el-input>
+        </el-form-item>
+      </el-form>
+      
+      <template #footer>
+        <div class="dialog-footer">
+          <el-button @click="showFolderEditDialog = false">取消</el-button>
+          <el-button type="primary" @click="saveFolder">保存</el-button>
+        </div>
+      </template>
+    </el-dialog>
+    
+    <!-- 删除文件夹确认对话框 -->
+    <el-dialog
+      v-model="deleteFolderDialogVisible"
+      title="删除文件夹"
+      width="400px"
+    >
+      <div class="delete-confirmation">
+        <p>确定要删除文件夹 "{{ folderToDelete?.name }}" 吗？</p>
+        <p class="delete-warning">此操作不会删除文件夹中的图片，但文件夹关联将被永久删除。</p>
+      </div>
+      
+      <template #footer>
+        <div class="dialog-footer">
+          <el-button @click="deleteFolderDialogVisible = false">取消</el-button>
+          <el-button type="danger" @click="deleteFolder">确认删除</el-button>
+        </div>
+      </template>
+    </el-dialog>
+    
+    <!-- 标签管理对话框 -->
+    <el-dialog
+      v-model="showTagManager"
+      title="标签管理"
+      width="800px"
+    >
+      <div class="tag-manager">
+        <div class="tag-list-header">
+          <h3>我的标签</h3>
+          <el-button type="primary" size="small" @click="openCreateTagDialog">
+            <el-icon><Plus /></el-icon> 创建标签
+          </el-button>
+        </div>
+        
+        <div class="tag-cloud">
+          <el-tag
+            v-for="tag in allTags"
+            :key="tag.name"
+            class="tag-item"
+            closable
+            :disable-transitions="false"
+            @close="confirmDeleteTag(tag)"
+            @click="viewTagImages(tag)"
+          >
+            {{ tag.name }} ({{ tag.count }})
+          </el-tag>
+        </div>
+      </div>
+    </el-dialog>
+    
+    <!-- 创建/编辑标签对话框 -->
+    <el-dialog
+      v-model="showTagEditDialog"
+      :title="tagEditMode === 'create' ? '创建标签' : '编辑标签'"
+      width="500px"
+    >
+      <el-form :model="currentTag" label-position="top">
+        <el-form-item label="标签名称" required>
+          <el-input v-model="currentTag.name" placeholder="请输入标签名称"></el-input>
+        </el-form-item>
+      </el-form>
+      
+      <template #footer>
+        <div class="dialog-footer">
+          <el-button @click="showTagEditDialog = false">取消</el-button>
+          <el-button type="primary" @click="saveTag">保存</el-button>
+        </div>
+      </template>
+    </el-dialog>
+    
+    <!-- 删除标签确认对话框 -->
+    <el-dialog
+      v-model="deleteTagDialogVisible"
+      title="删除标签"
+      width="400px"
+    >
+      <div class="delete-confirmation">
+        <p>确定要删除标签 "{{ tagToDelete?.name }}" 吗？</p>
+        <p class="delete-warning">此操作不会删除带有此标签的图片，但标签关联将被永久删除。</p>
+      </div>
+      
+      <template #footer>
+        <div class="dialog-footer">
+          <el-button @click="deleteTagDialogVisible = false">取消</el-button>
+          <el-button type="danger" @click="deleteTag">确认删除</el-button>
+        </div>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -1104,10 +1281,184 @@ export default {
       selectAll.value = allSelected
     })
     
+    // 文件夹管理相关
+    const showFolderManager = ref(false)
+    const showFolderEditDialog = ref(false)
+    const folderEditMode = ref('create') // 'create' or 'edit'
+    const folders = ref([])
+    const currentFolder = ref({ name: '', description: '' })
+    const deleteFolderDialogVisible = ref(false)
+    const folderToDelete = ref(null)
+    
+    // 标签管理相关
+    const showTagManager = ref(false)
+    const showTagEditDialog = ref(false)
+    const tagEditMode = ref('create') // 'create' or 'edit'
+    const currentTag = ref({ name: '' })
+    const deleteTagDialogVisible = ref(false)
+    const tagToDelete = ref(null)
+    
+    // 获取所有标签(包含计数)
+    const allTags = computed(() => {
+      // 从所有图片中收集标签，并计算每个标签的数量
+      const tagCounts = {}
+      store.state.images.forEach(img => {
+        if (img.tags && img.tags.length) {
+          img.tags.forEach(tag => {
+            if (!tagCounts[tag]) tagCounts[tag] = 0
+            tagCounts[tag]++
+          })
+        }
+      })
+      
+      return Object.keys(tagCounts).map(tag => ({
+        name: tag,
+        count: tagCounts[tag]
+      })).sort((a, b) => b.count - a.count) // 按数量降序排序
+    })
+    
+    // 初始化时获取文件夹列表
+    const fetchFolders = async () => {
+      try {
+        // 调用store获取文件夹列表
+        const result = await store.dispatch('fetchFolders')
+        folders.value = result || []
+      } catch (error) {
+        console.error('获取文件夹列表失败:', error)
+        ElMessage.error('获取文件夹列表失败')
+      }
+    }
+    
+    // 打开创建文件夹对话框
+    const openCreateFolderDialog = () => {
+      folderEditMode.value = 'create'
+      currentFolder.value = { name: '', description: '' }
+      showFolderEditDialog.value = true
+    }
+    
+    // 编辑文件夹
+    const editFolder = (folder) => {
+      folderEditMode.value = 'edit'
+      currentFolder.value = { ...folder }
+      showFolderEditDialog.value = true
+    }
+    
+    // 保存文件夹（创建或更新）
+    const saveFolder = async () => {
+      try {
+        if (!currentFolder.value.name.trim()) {
+          ElMessage.warning('文件夹名称不能为空')
+          return
+        }
+        
+        if (folderEditMode.value === 'create') {
+          await store.dispatch('createFolder', currentFolder.value)
+          ElMessage.success('文件夹创建成功')
+        } else {
+          await store.dispatch('updateFolder', currentFolder.value)
+          ElMessage.success('文件夹更新成功')
+        }
+        
+        showFolderEditDialog.value = false
+        fetchFolders() // 重新获取文件夹列表
+      } catch (error) {
+        console.error('保存文件夹失败:', error)
+        ElMessage.error('保存文件夹失败')
+      }
+    }
+    
+    // 确认删除文件夹
+    const confirmDeleteFolder = (folder) => {
+      folderToDelete.value = folder
+      deleteFolderDialogVisible.value = true
+    }
+    
+    // 删除文件夹
+    const deleteFolder = async () => {
+      try {
+        await store.dispatch('deleteFolder', folderToDelete.value.id)
+        ElMessage.success('文件夹删除成功')
+        deleteFolderDialogVisible.value = false
+        fetchFolders() // 重新获取文件夹列表
+      } catch (error) {
+        console.error('删除文件夹失败:', error)
+        ElMessage.error('删除文件夹失败')
+      }
+    }
+    
+    // 查看文件夹中的图片
+    const viewFolderImages = (folder) => {
+      // 设置筛选条件为当前文件夹
+      store.commit('SET_FILTERS', { folderId: folder.id })
+      showFolderManager.value = false
+      ElMessage.success(`正在查看文件夹: ${folder.name}`)
+    }
+    
+    // 打开创建标签对话框
+    const openCreateTagDialog = () => {
+      tagEditMode.value = 'create'
+      currentTag.value = { name: '' }
+      showTagEditDialog.value = true
+    }
+    
+    // 保存标签（创建或更新）
+    const saveTag = async () => {
+      try {
+        if (!currentTag.value.name.trim()) {
+          ElMessage.warning('标签名称不能为空')
+          return
+        }
+        
+        if (tagEditMode.value === 'create') {
+          await store.dispatch('createTag', currentTag.value)
+          ElMessage.success('标签创建成功')
+        } else {
+          await store.dispatch('updateTag', currentTag.value)
+          ElMessage.success('标签更新成功')
+        }
+        
+        showTagEditDialog.value = false
+        await store.dispatch('fetchImages') // 重新获取图片列表以更新标签
+      } catch (error) {
+        console.error('保存标签失败:', error)
+        ElMessage.error('保存标签失败')
+      }
+    }
+    
+    // 确认删除标签
+    const confirmDeleteTag = (tag) => {
+      tagToDelete.value = tag
+      deleteTagDialogVisible.value = true
+    }
+    
+    // 删除标签
+    const deleteTag = async () => {
+      try {
+        await store.dispatch('deleteTag', tagToDelete.value.name)
+        ElMessage.success('标签删除成功')
+        deleteTagDialogVisible.value = false
+        await store.dispatch('fetchImages') // 重新获取图片列表以更新标签
+      } catch (error) {
+        console.error('删除标签失败:', error)
+        ElMessage.error('删除标签失败')
+      }
+    }
+    
+    // 查看标签对应的图片
+    const viewTagImages = (tag) => {
+      // 设置筛选条件为当前标签
+      store.commit('SET_FILTERS', { tags: [tag.name] })
+      showTagManager.value = false
+      ElMessage.success(`正在查看标签: ${tag.name}`)
+    }
+    
     // 组件挂载时从存储加载数据
     onMounted(() => {
       // 加载模拟数据
       store.dispatch('fetchImages')
+      
+      // 加载文件夹列表
+      fetchFolders()
       
       // 从本地存储恢复视图设置
       if (localStorage.getItem('viewMode')) {
@@ -1198,6 +1549,34 @@ export default {
       selectAll,
       isIndeterminate,
       handleSelectAllChange,
+      // 文件夹相关
+      showFolderManager,
+      showFolderEditDialog,
+      folderEditMode,
+      folders,
+      currentFolder,
+      deleteFolderDialogVisible,
+      folderToDelete,
+      openCreateFolderDialog,
+      editFolder,
+      saveFolder,
+      confirmDeleteFolder,
+      deleteFolder,
+      viewFolderImages,
+      fetchFolders,
+      // 标签相关
+      showTagManager,
+      showTagEditDialog,
+      tagEditMode,
+      currentTag,
+      deleteTagDialogVisible,
+      tagToDelete,
+      allTags,
+      openCreateTagDialog,
+      saveTag,
+      confirmDeleteTag,
+      deleteTag,
+      viewTagImages,
     }
   }
 }
@@ -1826,5 +2205,45 @@ export default {
     width: 100%;
     margin-bottom: 12px;
   }
+}
+
+/* 文件夹和标签管理样式 */
+.folder-manager, .tag-manager {
+  padding: 0 0 20px 0;
+}
+
+.folder-list-header, .tag-list-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.folder-list-header h3, .tag-list-header h3 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 500;
+}
+
+.tag-cloud {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 16px;
+  background-color: #f9fafb;
+  border-radius: 8px;
+  min-height: 100px;
+}
+
+.tag-item {
+  padding: 8px 12px;
+  font-size: 14px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.tag-item:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
 }
 </style> 

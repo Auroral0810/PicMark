@@ -1,7 +1,9 @@
 const express = require('express');
 const { check } = require('express-validator');
 const imageController = require('../controllers/imageController');
+const folderController = require('../controllers/folderController');
 const { protect } = require('../middleware/auth');
+const authMiddleware = require('../middleware/auth');
 
 const router = express.Router();
 
@@ -38,5 +40,8 @@ router.put('/:id', imageController.updateImage);
 
 // 点赞/取消点赞 POST /api/images/:id/like
 router.post('/:id/like', imageController.toggleLike);
+
+// 添加图片到文件夹
+router.put('/:id/folder', imageController.addImageToFolder);
 
 module.exports = router; 

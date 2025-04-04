@@ -50,6 +50,34 @@ exports.protect = async (req, res, next) => {
   }
 };
 
+// 可选认证中间件，用户有token时验证，没有token时也允许继续
+exports.optional = async (req, res, next) => {
+  try {
+    let token;
+    
+    // 检查Authorization头
+    if (req.headers.authorization && req.headers.authorization.startsWith('Bearer')) {
+      token = req.headers.authorization.split(' ')[1];
+      
+      // 验证token
+      const decoded = jwt.verify(token, process.env.JWT_SECRET);
+      
+      // 检查用户是否存在
+      const user = await User.findById(decoded.id);
+      if (user && user.isActive) {
+        // 将用户信息添加到请求对象
+        req.user = user;
+      }
+    }
+    
+    // 无论是否有token和用户，都继续执行
+    next();
+  } catch (error) {
+    // 即使验证失败也继续，只是不设置req.user
+    next();
+  }
+};
+
 // 授权中间件（用于管理员权限）
 exports.authorize = (roles = []) => {
   return (req, res, next) => {

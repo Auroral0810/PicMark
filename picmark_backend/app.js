@@ -6,6 +6,10 @@ const path = require('path');
 
 // 引入路由
 const apiRoutes = require('./routes/api.routes');
+const imageRoutes = require('./routes/image.routes');
+const userRoutes = require('./routes/user.routes');
+const uploadRoutes = require('./routes/upload.routes');
+const folderRoutes = require('./routes/folder.routes');
 
 const app = express();
 
@@ -21,6 +25,10 @@ app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 // API路由
 app.use('/api', apiRoutes);
+app.use('/api/images', imageRoutes);
+app.use('/api/users', userRoutes);
+app.use('/api/token', uploadRoutes);
+app.use('/api/folders', folderRoutes);
 
 // 根路由
 app.get('/', (req, res) => {

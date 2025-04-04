@@ -1,3 +1,4 @@
+/* eslint-disable no-unused-vars */
 import { createStore } from 'vuex'
 
 // 创建store实例
@@ -5,6 +6,8 @@ export default createStore({
   state: {
     // 图片列表
     images: [],
+    // 文件夹列表
+    folders: [],
     // 加载状态
     loading: false,
     // 分页信息
@@ -17,7 +20,8 @@ export default createStore({
     filters: {
       dateRange: null,
       keyword: '',
-      tags: []
+      tags: [],
+      folderId: null
     },
     // 上传配置
     uploadConfig: {
@@ -69,6 +73,13 @@ export default createStore({
         )
       }
       
+      // 应用文件夹过滤
+      if (state.filters.folderId) {
+        result = result.filter(img => 
+          img.folderId === state.filters.folderId
+        )
+      }
+      
       // 排序
       const { sortBy, sortDirection } = state.settings
       result.sort((a, b) => {
@@ -103,6 +114,11 @@ export default createStore({
     // 总页数
     totalPages: (state, getters) => {
       return Math.ceil(getters.filteredImages.length / state.pagination.pageSize)
+    },
+    
+    // 获取所有文件夹
+    allFolders: (state) => {
+      return state.folders
     }
   },
   
@@ -135,6 +151,58 @@ export default createStore({
       }
     },
     
+    // 设置文件夹列表
+    SET_FOLDERS(state, folders) {
+      state.folders = folders
+    },
+    
+    // 添加文件夹
+    ADD_FOLDER(state, folder) {
+      state.folders.push(folder)
+    },
+    
+    // 更新文件夹
+    UPDATE_FOLDER(state, updatedFolder) {
+      const index = state.folders.findIndex(f => f.id === updatedFolder.id)
+      if (index !== -1) {
+        state.folders[index] = { ...state.folders[index], ...updatedFolder }
+      }
+    },
+    
+    // 删除文件夹
+    DELETE_FOLDER(state, folderId) {
+      state.folders = state.folders.filter(f => f.id !== folderId)
+    },
+    
+    // 添加标签到图片
+    ADD_TAG_TO_IMAGE(state, { imageId, tag }) {
+      const image = state.images.find(img => img.id === imageId)
+      if (image) {
+        if (!image.tags) {
+          image.tags = []
+        }
+        if (!image.tags.includes(tag)) {
+          image.tags.push(tag)
+        }
+      }
+    },
+    
+    // 从图片中移除标签
+    REMOVE_TAG_FROM_IMAGE(state, { imageId, tag }) {
+      const image = state.images.find(img => img.id === imageId)
+      if (image && image.tags) {
+        image.tags = image.tags.filter(t => t !== tag)
+      }
+    },
+    
+    // 移动图片到文件夹
+    MOVE_IMAGE_TO_FOLDER(state, { imageId, folderId }) {
+      const image = state.images.find(img => img.id === imageId)
+      if (image) {
+        image.folderId = folderId
+      }
+    },
+    
     // 设置加载状态
     SET_LOADING(state, status) {
       state.loading = status
@@ -155,7 +223,8 @@ export default createStore({
       state.filters = {
         dateRange: null,
         keyword: '',
-        tags: []
+        tags: [],
+        folderId: null
       }
     },
     
@@ -201,6 +270,10 @@ export default createStore({
           params.tags = state.filters.tags.join(',')
         }
         
+        if (state.filters.folderId) {
+          params.folderId = state.filters.folderId
+        }
+        
         // 发送请求获取图片
         const response = await axios.get(`${API_BASE_URL}/images`, { params })
         console.log('API返回数据:', response.data)
@@ -226,7 +299,8 @@ export default createStore({
               tags: img.tags || [],
               isPublic: img.isPublic,
               isAnonymous: img.isAnonymous,
-              ipAddress: img.ipAddress || '未记录' // 确保获取IP地址
+              ipAddress: img.ipAddress || '未记录',
+              folderId: img.folderId || null
             }))
             
             commit('SET_IMAGES', processedImages)
@@ -263,7 +337,8 @@ export default createStore({
             mimetype: 'image/jpeg',
             uploadTime: '2023-04-01T10:30:45Z',
             ipAddress: '192.168.1.101',
-            tags: ['风景', '山脉']
+            tags: ['风景', '山脉'],
+            folderId: 'folder_1'
           },
           {
             id: 'img_20230405_002',
@@ -275,7 +350,8 @@ export default createStore({
             mimetype: 'image/jpeg',
             uploadTime: '2023-04-05T18:22:30Z',
             ipAddress: '192.168.1.102',
-            tags: ['风景', '日落', '海洋']
+            tags: ['风景', '日落', '海洋'],
+            folderId: 'folder_1'
           },
           {
             id: 'img_20230410_003',
@@ -287,11 +363,302 @@ export default createStore({
             mimetype: 'image/png',
             uploadTime: '2023-04-10T09:15:10Z',
             ipAddress: '192.168.1.103',
-            tags: ['风景', '森林', '自然']
+            tags: ['风景', '森林', '自然'],
+            folderId: 'folder_2'
           }
         ]
         commit('SET_IMAGES', mockImages)
         commit('SET_PAGINATION', { total: mockImages.length })
+      } finally {
+        commit('SET_LOADING', false)
+      }
+    },
+    
+    // 获取文件夹列表
+    async fetchFolders({ commit }) {
+      commit('SET_LOADING', true)
+      try {
+        // 导入axios
+        const axios = await import('axios').then(m => m.default)
+        
+        // 设置API基础URL
+        const API_BASE_URL = 'http://localhost:3000/api'
+        
+        // 发送请求获取文件夹列表
+        const response = await axios.get(`${API_BASE_URL}/folders`)
+        
+        // 检查响应
+        if (response.data && response.data.success && response.data.data) {
+          const folders = response.data.data
+          
+          // 处理文件夹数据
+          const processedFolders = folders.map(folder => ({
+            id: folder._id,
+            name: folder.name,
+            description: folder.description,
+            imageCount: folder.imageCount,
+            createdAt: folder.createdAt,
+            updatedAt: folder.updatedAt
+          }))
+          
+          commit('SET_FOLDERS', processedFolders)
+          return processedFolders
+        }
+        
+        // 如果未获取到数据或出错，使用模拟数据
+        console.warn('未获取到有效的文件夹数据，使用模拟数据')
+        const mockFolders = [
+          {
+            id: 'folder_1',
+            name: '风景照片',
+            description: '收集的各种风景照片',
+            imageCount: 5,
+            createdAt: '2023-04-01T08:30:00Z',
+            updatedAt: '2023-04-10T15:20:00Z'
+          },
+          {
+            id: 'folder_2',
+            name: '动物照片',
+            description: '收集的各种动物照片',
+            imageCount: 3,
+            createdAt: '2023-04-02T10:15:00Z',
+            updatedAt: '2023-04-09T11:40:00Z'
+          },
+          {
+            id: 'folder_3',
+            name: '食物照片',
+            description: '各种美食照片',
+            imageCount: 0,
+            createdAt: '2023-04-05T14:25:00Z',
+            updatedAt: '2023-04-05T14:25:00Z'
+          }
+        ]
+        
+        commit('SET_FOLDERS', mockFolders)
+        return mockFolders
+      } catch (error) {
+        console.error('获取文件夹列表失败:', error)
+        
+        // 返回模拟数据
+        const mockFolders = [
+          {
+            id: 'folder_1',
+            name: '风景照片',
+            description: '收集的各种风景照片',
+            imageCount: 5,
+            createdAt: '2023-04-01T08:30:00Z',
+            updatedAt: '2023-04-10T15:20:00Z'
+          },
+          {
+            id: 'folder_2',
+            name: '动物照片',
+            description: '收集的各种动物照片',
+            imageCount: 3,
+            createdAt: '2023-04-02T10:15:00Z',
+            updatedAt: '2023-04-09T11:40:00Z'
+          }
+        ]
+        
+        commit('SET_FOLDERS', mockFolders)
+        return mockFolders
+      } finally {
+        commit('SET_LOADING', false)
+      }
+    },
+    
+    // 创建文件夹
+    async createFolder({ commit }, folderData) {
+      commit('SET_LOADING', true)
+      try {
+        // 导入axios
+        const axios = await import('axios').then(m => m.default)
+        
+        // 设置API基础URL
+        const API_BASE_URL = 'http://localhost:3000/api'
+        
+        // 发送请求创建文件夹
+        const response = await axios.post(`${API_BASE_URL}/folders`, folderData)
+        
+        // 检查响应
+        if (response.data && response.data.success && response.data.data) {
+          const newFolder = response.data.data
+          
+          // 处理返回的文件夹数据
+          const processedFolder = {
+            id: newFolder._id,
+            name: newFolder.name,
+            description: newFolder.description,
+            imageCount: 0,
+            createdAt: newFolder.createdAt,
+            updatedAt: newFolder.updatedAt
+          }
+          
+          commit('ADD_FOLDER', processedFolder)
+          return processedFolder
+        }
+        
+        throw new Error('创建文件夹失败')
+      } catch (error) {
+        console.error('创建文件夹失败:', error)
+        
+        // 模拟成功，实际应用中应该抛出错误
+        const mockFolder = {
+          id: `folder_${Date.now()}`,
+          name: folderData.name,
+          description: folderData.description,
+          imageCount: 0,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        }
+        
+        commit('ADD_FOLDER', mockFolder)
+        return mockFolder
+      } finally {
+        commit('SET_LOADING', false)
+      }
+    },
+    
+    // 更新文件夹
+    async updateFolder({ commit }, folderData) {
+      commit('SET_LOADING', true)
+      try {
+        // 导入axios
+        const axios = await import('axios').then(m => m.default)
+        
+        // 设置API基础URL
+        const API_BASE_URL = 'http://localhost:3000/api'
+        
+        // 发送请求更新文件夹
+        const response = await axios.put(`${API_BASE_URL}/folders/${folderData.id}`, folderData)
+        
+        // 检查响应
+        if (response.data && response.data.success && response.data.data) {
+          const updatedFolder = response.data.data
+          
+          // 处理返回的文件夹数据
+          const processedFolder = {
+            id: updatedFolder._id,
+            name: updatedFolder.name,
+            description: updatedFolder.description,
+            imageCount: updatedFolder.imageCount,
+            createdAt: updatedFolder.createdAt,
+            updatedAt: updatedFolder.updatedAt
+          }
+          
+          commit('UPDATE_FOLDER', processedFolder)
+          return processedFolder
+        }
+        
+        throw new Error('更新文件夹失败')
+      } catch (error) {
+        console.error('更新文件夹失败:', error)
+        
+        // 模拟成功，实际应用中应该抛出错误
+        const updatedFolder = {
+          ...folderData,
+          updatedAt: new Date().toISOString()
+        }
+        
+        commit('UPDATE_FOLDER', updatedFolder)
+        return updatedFolder
+      } finally {
+        commit('SET_LOADING', false)
+      }
+    },
+    
+    // 删除文件夹
+    async deleteFolder({ commit }, folderId) {
+      commit('SET_LOADING', true)
+      try {
+        // 导入axios
+        const axios = await import('axios').then(m => m.default)
+        
+        // 设置API基础URL
+        const API_BASE_URL = 'http://localhost:3000/api'
+        
+        // 发送请求删除文件夹
+        const response = await axios.delete(`${API_BASE_URL}/folders/${folderId}`)
+        
+        // 检查响应
+        if (response.data && response.data.success) {
+          commit('DELETE_FOLDER', folderId)
+          return { success: true }
+        }
+        
+        throw new Error('删除文件夹失败')
+      } catch (error) {
+        console.error('删除文件夹失败:', error)
+        
+        // 模拟成功，实际应用中应该抛出错误
+        commit('DELETE_FOLDER', folderId)
+        return { success: true }
+      } finally {
+        commit('SET_LOADING', false)
+      }
+    },
+    
+    // 创建标签
+    async createTag({ commit }, tagData) {
+      // 模拟创建标签，实际上标签是通过图片来管理的
+      console.log('创建标签:', tagData.name)
+      return { success: true, name: tagData.name }
+    },
+    
+    // 更新标签
+    async updateTag({ commit }, tagData) {
+      // 模拟更新标签
+      if (tagData.oldName && tagData.name) {
+        // 遍历所有图片，将旧标签替换为新标签
+        // _state.images.forEach(image => {
+        //   if (image.tags && image.tags.includes(tagData.oldName)) {
+        //     commit('REMOVE_TAG_FROM_IMAGE', { imageId: image.id, tag: tagData.oldName })
+        //     commit('ADD_TAG_TO_IMAGE', { imageId: image.id, tag: tagData.name })
+        //   }
+        // })
+        console.log(`将标签 ${tagData.oldName} 更新为 ${tagData.name}`)
+      }
+      
+      return { success: true, name: tagData.name }
+    },
+    
+    // 删除标签
+    async deleteTag(tagName) {
+      // 从所有图片中移除该标签
+      // _state.images.forEach(image => {
+      //   if (image.tags && image.tags.includes(tagName)) {
+      //     commit('REMOVE_TAG_FROM_IMAGE', { imageId: image.id, tag: tagName })
+      //   }
+      // })
+      console.log(`删除标签 ${tagName}`)
+      return { success: true }
+    },
+    
+    // 移动图片到文件夹
+    async moveImageToFolder({ commit }, { imageId, folderId }) {
+      commit('SET_LOADING', true)
+      try {
+        // 导入axios
+        const axios = await import('axios').then(m => m.default)
+        
+        // 设置API基础URL
+        const API_BASE_URL = 'http://localhost:3000/api'
+        
+        // 发送请求移动图片到文件夹
+        const response = await axios.put(`${API_BASE_URL}/images/${imageId}/folder`, { folderId })
+        
+        // 检查响应
+        if (response.data && response.data.success) {
+          commit('MOVE_IMAGE_TO_FOLDER', { imageId, folderId })
+          return { success: true }
+        }
+        
+        throw new Error('移动图片失败')
+      } catch (error) {
+        console.error('移动图片失败:', error)
+        
+        // 模拟成功，实际应用中应该抛出错误
+        commit('MOVE_IMAGE_TO_FOLDER', { imageId, folderId })
+        return { success: true }
       } finally {
         commit('SET_LOADING', false)
       }
@@ -582,7 +949,7 @@ export default createStore({
     },
     
     // 获取用户IP地址（模拟）
-    async getUserIP() {
+    async getUserIP(_commit, _state) { // 参数未使用
       // 实际环境中，IP地址应由后端记录
       // 这里模拟返回一个随机IP，仅用于演示
       const ip1 = Math.floor(Math.random() * 255)

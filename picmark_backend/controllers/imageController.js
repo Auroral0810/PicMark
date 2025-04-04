@@ -1,6 +1,7 @@
 const Image = require('../models/image.model');
 const { deleteFile } = require('../utils/qiniu-sdk');
 const { validationResult } = require('express-validator');
+const Folder = require('../models/folder.model');
 
 // 保存图片信息
 exports.saveImage = async (req, res) => {
@@ -451,6 +452,75 @@ exports.toggleLike = async (req, res) => {
     });
   } catch (error) {
     console.error('切换点赞状态失败:', error);
+    res.status(500).json({
+      success: false,
+      message: '服务器错误'
+    });
+  }
+};
+
+// 添加图片到文件夹
+exports.addImageToFolder = async (req, res) => {
+  try {
+    const { folderId } = req.body;
+    const imageId = req.params.id;
+
+    // 确保图片存在
+    const image = await Image.findById(imageId);
+    if (!image) {
+      return res.status(404).json({
+        success: false,
+        message: '图片不存在'
+      });
+    }
+
+    // 检查权限
+    if (image.user && req.user && image.user.toString() !== req.user._id.toString() && req.user.role !== 'admin') {
+      return res.status(403).json({
+        success: false,
+        message: '没有权限修改此图片'
+      });
+    }
+
+    // 如果folderId为null，则从文件夹中移除图片
+    if (!folderId) {
+      image.folder = undefined;
+      await image.save();
+      return res.json({
+        success: true,
+        message: '图片已从文件夹中移除',
+        data: image
+      });
+    }
+
+    // 确保文件夹存在
+    const folder = await Folder.findById(folderId);
+    if (!folder) {
+      return res.status(404).json({
+        success: false,
+        message: '文件夹不存在'
+      });
+    }
+
+    // 检查文件夹权限
+    if (folder.user && req.user && folder.user.toString() !== req.user._id.toString() && req.user.role !== 'admin') {
+      return res.status(403).json({
+        success: false,
+        message: '没有权限添加图片到此文件夹'
+      });
+    }
+
+    // 更新图片的文件夹
+    image.folder = folderId;
+    await image.save();
+
+    res.json({
+      success: true,
+      message: '图片已添加到文件夹',
+      data: image
+    });
+  } catch (error) {
+    console.error('添加图片到文件夹失败:', error);
     res.status(500).json({
       success: false,
       message: '服务器错误'

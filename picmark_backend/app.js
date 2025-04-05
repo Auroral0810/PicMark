@@ -10,6 +10,7 @@ const imageRoutes = require('./routes/image.routes');
 const userRoutes = require('./routes/user.routes');
 const uploadRoutes = require('./routes/upload.routes');
 const folderRoutes = require('./routes/folder.routes');
+const tagRoutes = require('./routes/tag.routes');
 
 const app = express();
 
@@ -29,6 +30,7 @@ app.use('/api/images', imageRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/token', uploadRoutes);
 app.use('/api/folders', folderRoutes);
+app.use('/api/tags', tagRoutes);
 
 // 根路由
 app.get('/', (req, res) => {

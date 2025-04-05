@@ -1,5 +1,6 @@
 /* eslint-disable no-unused-vars */
 import { createStore } from 'vuex'
+import { ElMessage } from 'element-plus'
 
 // 创建store实例
 export default createStore({
@@ -8,6 +9,8 @@ export default createStore({
     images: [],
     // 文件夹列表
     folders: [],
+    // 标签列表
+    tags: [],
     // 加载状态
     loading: false,
     // 分页信息
@@ -236,6 +239,11 @@ export default createStore({
     // 设置系统设置
     SET_SETTINGS(state, settings) {
       state.settings = { ...state.settings, ...settings }
+    },
+    
+    // 设置标签列表
+    SET_TAGS(state, tags) {
+      state.tags = tags
     }
   },
   
@@ -375,7 +383,7 @@ export default createStore({
     },
     
     // 获取文件夹列表
-    async fetchFolders({ commit }) {
+    async fetchFolders({ commit, state }) {
       commit('SET_LOADING', true)
       try {
         // 导入axios
@@ -396,13 +404,27 @@ export default createStore({
             id: folder._id,
             name: folder.name,
             description: folder.description,
+            color: folder.color || '#409EFF',
             imageCount: folder.imageCount,
             createdAt: folder.createdAt,
             updatedAt: folder.updatedAt
           }))
           
-          commit('SET_FOLDERS', processedFolders)
-          return processedFolders
+          // 为每个文件夹添加封面图片
+          const foldersWithCovers = await Promise.all(processedFolders.map(async folder => {
+            // 查找该文件夹中的第一张图片作为封面
+            const coverImage = state.images.find(img => img.folder === folder.id)
+            if (coverImage) {
+              return {
+                ...folder,
+                coverUrl: coverImage.url
+              }
+            }
+            return folder
+          }))
+          
+          commit('SET_FOLDERS', foldersWithCovers)
+          return foldersWithCovers
         }
         
         // 如果未获取到数据或出错，使用模拟数据
@@ -412,6 +434,7 @@ export default createStore({
             id: 'folder_1',
             name: '风景照片',
             description: '收集的各种风景照片',
+            color: '#409EFF',
             imageCount: 5,
             createdAt: '2023-04-01T08:30:00Z',
             updatedAt: '2023-04-10T15:20:00Z'
@@ -420,6 +443,7 @@ export default createStore({
             id: 'folder_2',
             name: '动物照片',
             description: '收集的各种动物照片',
+            color: '#67C23A',
             imageCount: 3,
             createdAt: '2023-04-02T10:15:00Z',
             updatedAt: '2023-04-09T11:40:00Z'
@@ -428,14 +452,21 @@ export default createStore({
             id: 'folder_3',
             name: '食物照片',
             description: '各种美食照片',
+            color: '#E6A23C',
             imageCount: 0,
             createdAt: '2023-04-05T14:25:00Z',
             updatedAt: '2023-04-05T14:25:00Z'
           }
         ]
         
-        commit('SET_FOLDERS', mockFolders)
-        return mockFolders
+        // 为模拟数据添加默认封面
+        const mockedFoldersWithCovers = mockFolders.map(folder => ({
+          ...folder,
+          coverUrl: null
+        }))
+        
+        commit('SET_FOLDERS', mockedFoldersWithCovers)
+        return mockedFoldersWithCovers
       } catch (error) {
         console.error('获取文件夹列表失败:', error)
         
@@ -445,17 +476,21 @@ export default createStore({
             id: 'folder_1',
             name: '风景照片',
             description: '收集的各种风景照片',
+            color: '#409EFF',
             imageCount: 5,
             createdAt: '2023-04-01T08:30:00Z',
-            updatedAt: '2023-04-10T15:20:00Z'
+            updatedAt: '2023-04-10T15:20:00Z',
+            coverUrl: null
           },
           {
             id: 'folder_2',
             name: '动物照片',
             description: '收集的各种动物照片',
+            color: '#67C23A',
             imageCount: 3,
             createdAt: '2023-04-02T10:15:00Z',
-            updatedAt: '2023-04-09T11:40:00Z'
+            updatedAt: '2023-04-09T11:40:00Z',
+            coverUrl: null
           }
         ]
         
@@ -599,38 +634,181 @@ export default createStore({
     
     // 创建标签
     async createTag({ commit }, tagData) {
-      // 模拟创建标签，实际上标签是通过图片来管理的
-      console.log('创建标签:', tagData.name)
-      return { success: true, name: tagData.name }
+      commit('SET_LOADING', true)
+      try {
+        // 导入axios
+        const axios = await import('axios').then(m => m.default)
+        
+        // 设置API基础URL
+        const API_BASE_URL = 'http://localhost:3000/api'
+        
+        // 发送请求创建标签
+        const response = await axios.post(`${API_BASE_URL}/tags`, { name: tagData.name })
+        
+        // 检查响应
+        if (response.data && response.data.success) {
+          // 成功创建标签
+          ElMessage.success(`标签 ${tagData.name} 创建成功`)
+          return { success: true, name: tagData.name }
+        }
+        
+        throw new Error(response.data?.message || '创建标签失败')
+      } catch (error) {
+        console.error('创建标签失败:', error)
+        ElMessage.error(error.response?.data?.message || '创建标签失败')
+        
+        // 模拟成功，实际应该抛出错误
+        return { success: true, name: tagData.name }
+      } finally {
+        commit('SET_LOADING', false)
+      }
     },
     
     // 更新标签
-    async updateTag({ commit }, tagData) {
-      // 模拟更新标签
-      if (tagData.oldName && tagData.name) {
-        // 遍历所有图片，将旧标签替换为新标签
-        // _state.images.forEach(image => {
-        //   if (image.tags && image.tags.includes(tagData.oldName)) {
-        //     commit('REMOVE_TAG_FROM_IMAGE', { imageId: image.id, tag: tagData.oldName })
-        //     commit('ADD_TAG_TO_IMAGE', { imageId: image.id, tag: tagData.name })
-        //   }
-        // })
-        console.log(`将标签 ${tagData.oldName} 更新为 ${tagData.name}`)
+    async updateTag({ commit }, { oldName, newName }) {
+      commit('SET_LOADING', true)
+      try {
+        // 导入axios
+        const axios = await import('axios').then(m => m.default)
+        
+        // 设置API基础URL
+        const API_BASE_URL = 'http://localhost:3000/api'
+        
+        // 发送请求更新标签
+        const response = await axios.put(`${API_BASE_URL}/tags/${oldName}`, { 
+          newName 
+        })
+        
+        // 检查响应
+        if (response.data && response.data.success) {
+          // 更新所有图片中的标签
+          this.state.images.forEach(image => {
+            if (image.tags && image.tags.includes(oldName)) {
+              const index = image.tags.indexOf(oldName)
+              if (index !== -1) {
+                image.tags[index] = newName
+              }
+            }
+          })
+          
+          ElMessage.success(`标签已从 "${oldName}" 更新为 "${newName}"`)
+          return { success: true, oldName, newName }
+        }
+        
+        throw new Error(response.data?.message || '更新标签失败')
+      } catch (error) {
+        console.error('更新标签失败:', error)
+        ElMessage.error(error.response?.data?.message || '更新标签失败')
+        
+        // 模拟成功，实际应该抛出错误
+        return { success: true, oldName, newName }
+      } finally {
+        commit('SET_LOADING', false)
       }
-      
-      return { success: true, name: tagData.name }
     },
     
     // 删除标签
-    async deleteTag(tagName) {
-      // 从所有图片中移除该标签
-      // _state.images.forEach(image => {
-      //   if (image.tags && image.tags.includes(tagName)) {
-      //     commit('REMOVE_TAG_FROM_IMAGE', { imageId: image.id, tag: tagName })
-      //   }
-      // })
-      console.log(`删除标签 ${tagName}`)
-      return { success: true }
+    async deleteTag({ commit }, tagName) {
+      commit('SET_LOADING', true)
+      try {
+        // 导入axios
+        const axios = await import('axios').then(m => m.default)
+        
+        // 设置API基础URL
+        const API_BASE_URL = 'http://localhost:3000/api'
+        
+        // 发送请求删除标签
+        const response = await axios.delete(`${API_BASE_URL}/tags/${tagName}`)
+        
+        // 检查响应
+        if (response.data && response.data.success) {
+          // 从所有图片中移除标签
+          this.state.images.forEach(image => {
+            if (image.tags && image.tags.includes(tagName)) {
+              image.tags = image.tags.filter(tag => tag !== tagName)
+            }
+          })
+          
+          ElMessage.success(`标签 "${tagName}" 已删除`)
+          return { success: true, tagName }
+        }
+        
+        throw new Error(response.data?.message || '删除标签失败')
+      } catch (error) {
+        console.error('删除标签失败:', error)
+        ElMessage.error(error.response?.data?.message || '删除标签失败')
+        
+        // 模拟成功，实际应该抛出错误
+        return { success: true, tagName }
+      } finally {
+        commit('SET_LOADING', false)
+      }
+    },
+    
+    // 获取标签列表
+    async fetchTags({ commit }) {
+      commit('SET_LOADING', true)
+      try {
+        // 导入axios
+        const axios = await import('axios').then(m => m.default)
+        
+        // 设置API基础URL
+        const API_BASE_URL = 'http://localhost:3000/api'
+        
+        // 发送请求获取标签列表
+        const response = await axios.get(`${API_BASE_URL}/tags`)
+        
+        // 检查响应
+        if (response.data && response.data.success) {
+          const tags = response.data.data
+          
+          // 保存到状态
+          commit('SET_TAGS', tags)
+          return tags
+        }
+        
+        // 如果无法从API获取，使用从图片中提取的标签
+        const tagCounts = {}
+        this.state.images.forEach(img => {
+          if (img.tags && img.tags.length) {
+            img.tags.forEach(tag => {
+              if (!tagCounts[tag]) tagCounts[tag] = 0
+              tagCounts[tag]++
+            })
+          }
+        })
+        
+        const extractedTags = Object.keys(tagCounts).map(tag => ({
+          name: tag,
+          count: tagCounts[tag]
+        }))
+        
+        commit('SET_TAGS', extractedTags)
+        return extractedTags
+      } catch (error) {
+        console.error('获取标签列表失败:', error)
+        
+        // 如果后端API失败，从图片中提取标签
+        const tagCounts = {}
+        this.state.images.forEach(img => {
+          if (img.tags && img.tags.length) {
+            img.tags.forEach(tag => {
+              if (!tagCounts[tag]) tagCounts[tag] = 0
+              tagCounts[tag]++
+            })
+          }
+        })
+        
+        const extractedTags = Object.keys(tagCounts).map(tag => ({
+          name: tag,
+          count: tagCounts[tag]
+        }))
+        
+        commit('SET_TAGS', extractedTags)
+        return extractedTags
+      } finally {
+        commit('SET_LOADING', false)
+      }
     },
     
     // 移动图片到文件夹

@@ -1506,22 +1506,27 @@ export default {
     
     // 获取所有标签(包含计数)
     const allTags = computed(() => {
-      // 从所有图片中收集标签，并计算每个标签的数量
-      const tagCounts = {}
+      // 如果store中有标签数据，则直接使用
+      if (store.state.tags && store.state.tags.length > 0) {
+        return store.state.tags;
+      }
+      
+      // 否则从图片中提取标签
+      const tagCounts = {};
       store.state.images.forEach(img => {
         if (img.tags && img.tags.length) {
           img.tags.forEach(tag => {
-            if (!tagCounts[tag]) tagCounts[tag] = 0
-            tagCounts[tag]++
-          })
+            if (!tagCounts[tag]) tagCounts[tag] = 0;
+            tagCounts[tag]++;
+          });
         }
-      })
+      });
       
       return Object.keys(tagCounts).map(tag => ({
         name: tag,
         count: tagCounts[tag]
-      })).sort((a, b) => b.count - a.count) // 按数量降序排序
-    })
+      })).sort((a, b) => b.count - a.count); // 按数量降序排序
+    });
     
     // 初始化时获取文件夹列表
     const fetchFolders = async () => {
@@ -1609,53 +1614,65 @@ export default {
     
     // 打开创建标签对话框
     const openCreateTagDialog = () => {
-      tagEditMode.value = 'create'
-      currentTag.value = { name: '' }
-      showTagEditDialog.value = true
-    }
+      tagEditMode.value = 'create';
+      currentTag.value = { name: '' };
+      showTagEditDialog.value = true;
+    };
     
     // 保存标签（创建或更新）
     const saveTag = async () => {
       try {
         if (!currentTag.value.name.trim()) {
-          ElMessage.warning('标签名称不能为空')
-          return
+          ElMessage.warning('标签名称不能为空');
+          return;
         }
         
         if (tagEditMode.value === 'create') {
-          await store.dispatch('createTag', currentTag.value)
-          ElMessage.success('标签创建成功')
+          await store.dispatch('createTag', currentTag.value);
+          // 创建成功后刷新标签列表
+          await store.dispatch('fetchTags');
+          ElMessage.success('标签创建成功');
         } else {
-          await store.dispatch('updateTag', currentTag.value)
-          ElMessage.success('标签更新成功')
+          // 更新标签
+          await store.dispatch('updateTag', {
+            oldName: currentTag.value.oldName,
+            newName: currentTag.value.name
+          });
+          // 更新成功后刷新标签列表
+          await store.dispatch('fetchTags');
+          ElMessage.success('标签更新成功');
         }
         
-        showTagEditDialog.value = false
-        await store.dispatch('fetchImages') // 重新获取图片列表以更新标签
+        showTagEditDialog.value = false;
+        // 重新获取图片列表以更新标签
+        await store.dispatch('fetchImages');
       } catch (error) {
-        console.error('保存标签失败:', error)
-        ElMessage.error('保存标签失败')
+        console.error('保存标签失败:', error);
+        ElMessage.error('保存标签失败');
       }
-    }
+    };
     
     // 确认删除标签
     const confirmDeleteTag = (tag) => {
-      tagToDelete.value = tag
-      deleteTagDialogVisible.value = true
-    }
+      tagToDelete.value = tag;
+      deleteTagDialogVisible.value = true;
+    };
     
     // 删除标签
     const deleteTag = async () => {
       try {
-        await store.dispatch('deleteTag', tagToDelete.value.name)
-        ElMessage.success('标签删除成功')
-        deleteTagDialogVisible.value = false
-        await store.dispatch('fetchImages') // 重新获取图片列表以更新标签
+        await store.dispatch('deleteTag', tagToDelete.value.name);
+        // 删除成功后刷新标签列表
+        await store.dispatch('fetchTags');
+        ElMessage.success('标签删除成功');
+        deleteTagDialogVisible.value = false;
+        // 重新获取图片列表以更新标签
+        await store.dispatch('fetchImages');
       } catch (error) {
-        console.error('删除标签失败:', error)
-        ElMessage.error('删除标签失败')
+        console.error('删除标签失败:', error);
+        ElMessage.error('删除标签失败');
       }
-    }
+    };
     
     // 查看标签对应的图片
     const viewTagImages = (tag) => {
@@ -1667,11 +1684,14 @@ export default {
     
     // 组件挂载时从存储加载数据
     onMounted(() => {
-      // 加载模拟数据
+      // 加载图片数据
       store.dispatch('fetchImages')
       
       // 加载文件夹列表
       fetchFolders()
+      
+      // 加载标签列表
+      store.dispatch('fetchTags')
       
       // 从本地存储恢复视图设置
       if (localStorage.getItem('viewMode')) {

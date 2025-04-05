@@ -34,12 +34,14 @@
             <!-- 文件夹卡片 -->
             <el-col :xs="24" :sm="12" :md="8" :lg="6" v-for="folder in folders" :key="folder.id">
               <el-card shadow="hover" class="folder-card">
-                <div class="folder-icon" :style="{backgroundColor: folder.color}">
-                  <el-icon><Folder /></el-icon>
+                <div class="folder-cover" :style="getFolderCoverStyle(folder)">
+                  <div v-if="!folder.coverUrl" class="folder-icon" :style="{backgroundColor: folder.color}">
+                    <el-icon><Folder /></el-icon>
+                  </div>
                 </div>
                 <div class="folder-info">
                   <h3 class="folder-name">{{ folder.name }}</h3>
-                  <p class="folder-count">{{ folder.count }}张图片</p>
+                  <p class="folder-count">{{ folder.imageCount }}张图片</p>
                 </div>
                 <div class="folder-actions">
                   <el-tooltip content="查看图片" placement="top">
@@ -247,11 +249,13 @@
 import { ref, computed, reactive, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
+import { useStore } from 'vuex'
 
 export default {
   name: 'FolderTagsPage',
   setup() {
     const router = useRouter()
+    const store = useStore()
     const activeTab = ref('folders')
     
     // 文件夹相关状态
@@ -344,42 +348,33 @@ export default {
         
         isSavingFolder.value = true
         
-        // 模拟API调用延迟
-        await new Promise(resolve => setTimeout(resolve, 500))
-        
         if (isEditingFolder.value) {
           // 更新现有文件夹
-          const index = folders.value.findIndex(f => f.id === folderForm.id)
-          if (index !== -1) {
-            folders.value[index] = { 
-              ...folders.value[index],
-              name: folderForm.name,
-              color: folderForm.color,
-              description: folderForm.description
-            }
-          }
+          await store.dispatch('updateFolder', {
+            id: folderForm.id,
+            name: folderForm.name,
+            color: folderForm.color,
+            description: folderForm.description
+          })
           
           ElMessage.success('文件夹已更新')
         } else {
           // 创建新文件夹
-          const newId = folders.value.length > 0 
-            ? Math.max(...folders.value.map(f => f.id)) + 1 
-            : 1
-            
-          folders.value.push({
-            id: newId,
+          await store.dispatch('createFolder', {
             name: folderForm.name,
             color: folderForm.color,
-            description: folderForm.description,
-            count: 0
+            description: folderForm.description
           })
           
           ElMessage.success('文件夹已创建')
         }
         
+        // 重新获取文件夹列表
+        await fetchFolders()
         folderDialogVisible.value = false
       } catch (error) {
         console.error('Folder validation error:', error)
+        ElMessage.error('文件夹保存失败')
       } finally {
         isSavingFolder.value = false
       }
@@ -414,42 +409,27 @@ export default {
         
         isSavingTag.value = true
         
-        // 模拟API调用延迟
-        await new Promise(resolve => setTimeout(resolve, 500))
-        
         if (isEditingTag.value) {
           // 更新现有标签
-          const index = tags.value.findIndex(t => t.id === tagForm.id)
-          if (index !== -1) {
-            tags.value[index] = { 
-              ...tags.value[index],
-              name: tagForm.name,
-              type: tagForm.type,
-              effect: tagForm.effect
-            }
-          }
+          await store.dispatch('updateTag', {
+            oldName: currentItem.value.name,
+            newName: tagForm.name
+          })
           
           ElMessage.success('标签已更新')
         } else {
           // 创建新标签
-          const newId = tags.value.length > 0 
-            ? Math.max(...tags.value.map(t => t.id)) + 1 
-            : 1
-            
-          tags.value.push({
-            id: newId,
-            name: tagForm.name,
-            type: tagForm.type,
-            effect: tagForm.effect,
-            count: 0
-          })
+          await store.dispatch('createTag', { name: tagForm.name })
           
           ElMessage.success('标签已创建')
         }
         
+        // 重新获取标签列表
+        await fetchTags()
         tagDialogVisible.value = false
       } catch (error) {
         console.error('Tag validation error:', error)
+        ElMessage.error('标签保存失败')
       } finally {
         isSavingTag.value = false
       }
@@ -476,17 +456,16 @@ export default {
       isDeleting.value = true
       
       try {
-        // 模拟API调用延迟
-        await new Promise(resolve => setTimeout(resolve, 500))
-        
         if (isFolder.value) {
           // 删除文件夹
-          folders.value = folders.value.filter(f => f.id !== currentItem.value.id)
+          await store.dispatch('deleteFolder', currentItem.value.id)
           ElMessage.success(`文件夹 "${currentItem.value.name}" 已删除`)
+          await fetchFolders() // 刷新文件夹列表
         } else {
           // 删除标签
-          tags.value = tags.value.filter(t => t.id !== currentItem.value.id)
+          await store.dispatch('deleteTag', currentItem.value.name)
           ElMessage.success(`标签 "${currentItem.value.name}" 已删除`)
+          await fetchTags() // 刷新标签列表
         }
         
         deleteDialogVisible.value = false
@@ -515,9 +494,59 @@ export default {
       })
     }
     
+    // 获取文件夹列表
+    const fetchFolders = async () => {
+      try {
+        const foldersList = await store.dispatch('fetchFolders')
+        folders.value = foldersList || []
+        console.log('获取到文件夹列表:', folders.value)
+      } catch (error) {
+        console.error('获取文件夹列表失败:', error)
+        ElMessage.error('获取文件夹列表失败')
+      }
+    }
+    
+    // 获取标签列表
+    const fetchTags = async () => {
+      try {
+        const tagsList = await store.dispatch('fetchTags')
+        tags.value = tagsList || []
+        console.log('获取到标签列表:', tags.value)
+      } catch (error) {
+        console.error('获取标签列表失败:', error)
+        ElMessage.error('获取标签列表失败')
+      }
+    }
+    
+    // 获取文件夹封面样式
+    const getFolderCoverStyle = (folder) => {
+      if (folder.coverUrl) {
+        return {
+          backgroundImage: `url(${folder.coverUrl})`,
+          backgroundSize: 'cover',
+          backgroundPosition: 'center',
+          height: '120px',
+          borderRadius: '8px 8px 0 0'
+        }
+      }
+      return {}
+    }
+    
     // 组件挂载时加载数据
-    onMounted(() => {
-      // 在实际应用中，这里应该通过API获取数据
+    onMounted(async () => {
+      try {
+        // 先获取图片列表，这样才能为文件夹设置封面
+        await store.dispatch('fetchImages');
+        
+        // 然后获取文件夹和标签数据
+        await Promise.all([
+          fetchFolders(),
+          fetchTags()
+        ]);
+      } catch (error) {
+        console.error('加载数据失败:', error);
+        ElMessage.error('加载数据失败，请刷新页面重试');
+      }
     })
     
     return {
@@ -552,7 +581,8 @@ export default {
       confirmDeleteTag,
       confirmDelete,
       viewFolderImages,
-      viewTaggedImages
+      viewTaggedImages,
+      getFolderCoverStyle
     }
   }
 }
@@ -637,6 +667,24 @@ export default {
   box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
 }
 
+.folder-cover {
+  height: 120px;
+  position: relative;
+  border-radius: 8px 8px 0 0;
+  overflow: hidden;
+  background-color: #f5f7fa;
+  margin-bottom: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.folder-cover[style*="background-image"] {
+  background-position: center;
+  background-size: cover;
+  background-repeat: no-repeat;
+}
+
 .folder-icon {
   width: 56px;
   height: 56px;
@@ -644,7 +692,7 @@ export default {
   display: flex;
   align-items: center;
   justify-content: center;
-  margin-bottom: 16px;
+  margin: 30px auto;
   font-size: 24px;
   color: white;
 }

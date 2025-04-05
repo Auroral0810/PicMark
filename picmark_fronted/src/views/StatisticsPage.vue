@@ -304,14 +304,14 @@ export default {
       
       const series = uploadChartType.value === 'count' 
         ? statistics.value.recentTrend.uploads
-        : statistics.value.recentTrend.visits;
+        : statistics.value.recentTrend.storage;
       
       const option = {
         tooltip: {
           trigger: 'axis',
           formatter: function(params) {
             const data = params[0];
-            return `${data.name}<br/>${uploadChartType.value === 'count' ? '数量' : '访问量'}: ${data.value}${uploadChartType.value === 'count' ? '张' : '次'}`;
+            return `${data.name}<br/>${uploadChartType.value === 'count' ? '数量' : '大小'}: ${uploadChartType.value === 'count' ? data.value + '张' : formatStorageSize(data.value)}`;
           }
         },
         grid: {
@@ -334,13 +334,13 @@ export default {
           type: 'value',
           axisLabel: {
             formatter: function(value) {
-              return value + (uploadChartType.value === 'count' ? '张' : '次');
+              return uploadChartType.value === 'count' ? value + '张' : formatStorageSize(value);
             }
           }
         },
         series: [
           {
-            name: uploadChartType.value === 'count' ? '上传数量' : '访问量',
+            name: uploadChartType.value === 'count' ? '上传数量' : '存储大小',
             type: 'line',
             smooth: true,
             lineStyle: {

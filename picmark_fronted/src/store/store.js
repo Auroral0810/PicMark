@@ -28,10 +28,26 @@ export default createStore({
     },
     // 上传配置
     uploadConfig: {
-      compress: true,
-      autoRename: true,
-      maxSize: 5, // MB
-      allowedTypes: ['image/jpeg', 'image/png', 'image/gif', 'image/webp']
+      compress: true,                    // 是否压缩图片
+      compressQuality: 85,               // 压缩质量，范围1-100
+      maxSize: 5,                        // 最大大小（MB）
+      allowedTypes: [                    // 允许的文件类型
+        'image/jpeg', 
+        'image/jpg',
+        'image/png', 
+        'image/gif', 
+        'image/webp',
+        'image/svg+xml', 
+        'image/bmp', 
+        'image/tiff',
+        'image/avif',
+        'image/x-icon',
+        'image/heic',
+        'image/heif'
+      ],
+      autoRename: true,                  // 是否自动重命名
+      renameType: 'uuid',                // 重命名类型：original(原始), timestamp(时间戳), uuid(随机)
+      customNamePattern: '{year}{month}{day}_{filename}' // 自定义命名模式
     },
     // 系统设置
     settings: {
@@ -359,47 +375,7 @@ export default createStore({
       } catch (error) {
         console.error('获取图片列表失败:', error)
         // 错误时使用模拟数据
-        const mockImages = [
-          {
-            id: 'img_20230401_001',
-            filename: 'mountains.jpg',
-            url: 'https://img.picgo.net/2023/04/01/mountains.jpg',
-            size: 2345678,
-            width: 1920,
-            height: 1080,
-            mimetype: 'image/jpeg',
-            uploadTime: '2023-04-01T10:30:45Z',
-            ipAddress: '192.168.1.101',
-            tags: ['风景', '山脉'],
-            folderId: 'folder_1'
-          },
-          {
-            id: 'img_20230405_002',
-            filename: 'sunset.jpg',
-            url: 'https://img.picgo.net/2023/04/05/sunset.jpg',
-            size: 1245678,
-            width: 1600,
-            height: 900,
-            mimetype: 'image/jpeg',
-            uploadTime: '2023-04-05T18:22:30Z',
-            ipAddress: '192.168.1.102',
-            tags: ['风景', '日落', '海洋'],
-            folderId: 'folder_1'
-          },
-          {
-            id: 'img_20230410_003',
-            filename: 'forest.png',
-            url: 'https://img.picgo.net/2023/04/10/forest.png',
-            size: 3456789,
-            width: 2000,
-            height: 1200,
-            mimetype: 'image/png',
-            uploadTime: '2023-04-10T09:15:10Z',
-            ipAddress: '192.168.1.103',
-            tags: ['风景', '森林', '自然'],
-            folderId: 'folder_2'
-          }
-        ]
+        const mockImages = []
         commit('SET_IMAGES', mockImages)
         commit('SET_PAGINATION', { total: mockImages.length })
       } finally {
@@ -855,207 +831,159 @@ export default createStore({
       return []
     },
     
-    // 上传图片
-    async uploadImages({ commit, state, dispatch }, files) {
+    // 单个图片上传
+    async uploadImage({ commit, state, dispatch }, options) {
       commit('SET_LOADING', true)
       
-      // 存储上传结果
-      const uploadedImages = []
-      const failedFiles = []
-      
       try {
-        // 获取axios (确保在应用中引入了axios)
+        // 导入axios
         const axios = await import('axios').then(m => m.default)
         
-        // 后端API基础URL - 确保与后端的实际地址匹配
+        // 设置API基础URL
         const API_BASE_URL = 'http://localhost:3000/api'
         
-        // 获取用户登录状态
-        const token = localStorage.getItem('token')
-        const isLoggedIn = !!token
+        const { 
+          file, 
+          compress = state.uploadConfig.compress, 
+          compressQuality = state.uploadConfig.compressQuality,
+          convertFormat = null,
+          folderId = null,
+          tags = []
+        } = options
         
-        // 获取用户IP地址
-        let userIP = '';
-        try {
-          // 使用公共API获取IP地址
-          const ipResponse = await axios.get('https://api.ipify.org?format=json');
-          userIP = ipResponse.data.ip;
-          console.log('获取到用户IP:', userIP);
-        } catch (error) {
-          console.warn('获取IP地址失败:', error);
-          userIP = '未知IP';
+        // 验证文件类型是否被允许
+        if (!file.type.startsWith('image/')) {
+          throw new Error('只能上传图片文件')
         }
         
-        // 为每个文件创建上传任务
-        const uploadTasks = files.map(async (file) => {
-          try {
-            // 应用图片处理
-            let processedFile = file
-            
-            // 如果启用了压缩，对图片进行压缩处理
-            if (state.uploadConfig.compress && file.type.startsWith('image/')) {
-              processedFile = await dispatch('compressImage', { file, quality: state.uploadConfig.compressQuality || 85 })
-            }
-            
-            // 1. 从后端获取上传凭证和key
-            const filename = state.uploadConfig.autoRename ? `${Date.now()}_${file.name}` : file.name
-            // 添加日志
-            console.log(`请求七牛云上传凭证，文件名: ${filename}`)
-            
-            let retries = 0
-            const maxRetries = 3
-            let tokenResponse
-            
-            // 添加重试逻辑，避免网络问题导致获取token失败
-            while (retries < maxRetries) {
-              try {
-                tokenResponse = await axios.get(`${API_BASE_URL}/token`, {
-                  params: { filename }
-                })
-                break
-              } catch (err) {
-                retries++
-                console.error(`获取上传凭证失败(${retries}/${maxRetries})：`, err)
-                if (retries === maxRetries) {
-                  throw new Error(`获取上传凭证失败: ${err.message}`)
-                }
-                // 等待一段时间后重试
-                await new Promise(r => setTimeout(r, 1000))
-              }
-            }
-            
-            console.log('获取到的token响应:', tokenResponse.data)
-            
-            if (!tokenResponse.data.success) {
-              throw new Error(tokenResponse.data.message || '获取上传凭证失败')
-            }
-            
-            const { token, key, domain } = tokenResponse.data.data
-            
-            // 确认获取到了有效的token
-            if (!token) {
-              throw new Error('获取到的上传凭证为空')
-            }
-            
-            console.log('上传凭证:', { token: token.substring(0, 10) + '...', key, domain })
-            
-            // 2. 使用七牛云SDK上传文件
-            const formData = new FormData()
-            formData.append('file', processedFile)
-            formData.append('token', token)
-            formData.append('key', key)
-            
-            // 上传到七牛云
-            console.log('开始上传到七牛云...')
-            const uploadResponse = await axios.post('https://upload.qiniup.com', formData, {
-              headers: {
-                'Content-Type': 'multipart/form-data'
-              },
-              onUploadProgress: (progressEvent) => {
-                console.log(`${file.name} 上传进度: ${Math.round(progressEvent.loaded * 100 / progressEvent.total)}%`)
-              }
-            })
-            
-            console.log('七牛云上传响应:', uploadResponse.data)
-            
-            // 确保上传成功并获取了响应
-            if (!uploadResponse.data || !uploadResponse.data.key) {
-              throw new Error('七牛云返回的响应无效')
-            }
-            
-            // 3. 构建图片信息并保存到数据库
-            // 构建完整的图片URL
-            const imageUrl = `${domain.startsWith('http') ? domain : `http://${domain}`}/${uploadResponse.data.key}`
-            
-            const fileInfo = {
-              title: file.name,
-              description: '', // 可以后续编辑添加描述
-              url: imageUrl,
-              key: uploadResponse.data.key,
-              tags: [], // 可以后续编辑添加标签
-              width: uploadResponse.data.width || 0,
-              height: uploadResponse.data.height || 0,
-              fileSize: file.size,
-              format: file.type.split('/')[1] || 'unknown',
-              isPublic: true, // 默认为公开图片
-              ipAddress: userIP // 添加用户IP地址
-            }
-            
-            // 始终保存到数据库，无论用户是否登录
-            try {
-              console.log('准备保存到数据库的图片信息:', fileInfo)
-              
-              const headers = {
-                'Content-Type': 'application/json'
-              }
-              
-              // 如果用户已登录，添加认证令牌
-              if (isLoggedIn) {
-                headers['Authorization'] = `Bearer ${token}`
-              }
-              
-              const saveResponse = await axios.post(`${API_BASE_URL}/images`, fileInfo, { headers })
-              
-              console.log('保存图片信息响应:', saveResponse.data)
-              
-              if (saveResponse.data.success) {
-                // 使用数据库返回的图片信息(包含ID等)
-                fileInfo.id = saveResponse.data.data._id || null
-              } else {
-                console.warn('保存图片信息到数据库失败:', saveResponse.data.message)
-              }
-            } catch (error) {
-              console.error('保存图片信息到数据库失败:', error)
-              // 即使保存到数据库失败，我们仍然返回上传结果，因为图片已经上传到七牛云
-            }
-            
-            // 4. 返回完整的图片信息，包括多种格式的链接
-            const imageInfo = fileInfo
-            
-            // 构建不同格式的链接
-            const markdownFormat = state.settings.markdownFormat
-            const markdownLink = markdownFormat
-              .replace(/{filename}/g, imageInfo.title)
-              .replace(/{url}/g, imageInfo.url)
-              .replace(/{width}/g, imageInfo.width)
-              .replace(/{height}/g, imageInfo.height)
-              
-            const htmlLink = `<img src="${imageInfo.url}" alt="${imageInfo.title}" width="${imageInfo.width}" height="${imageInfo.height}">`
-            
-            // 添加到上传结果
-            const resultImage = {
-              ...imageInfo,
-              markdownLink,
-              htmlLink,
-              plainLink: imageInfo.url
-            }
-            
-            uploadedImages.push(resultImage)
-            console.log('图片上传成功:', resultImage)
-            
-            return imageInfo
-          } catch (error) {
-            console.error(`上传文件 ${file.name} 失败:`, error)
-            failedFiles.push({ file, error: error.message })
-            return null
+        // 验证文件类型是否在允许列表中
+        if (!state.uploadConfig.allowedTypes.includes(file.type)) {
+          const supportedFormats = state.uploadConfig.allowedTypes.map(type => {
+            const formatName = type.split('/')[1]
+            return formatName.toUpperCase()
+          }).join(', ')
+          
+          throw new Error(`不支持的文件类型: ${file.type.split('/')[1]}\n仅支持: ${supportedFormats}`)
+        }
+        
+        // 验证文件大小
+        if (file.size > state.uploadConfig.maxSize * 1024 * 1024) {
+          throw new Error(`文件大小超过限制(${state.uploadConfig.maxSize}MB)`)
+        }
+        
+        // 处理文件
+        let processedFile = file
+        
+        // 如果需要压缩
+        if (compress && file.type.startsWith('image/')) {
+          processedFile = await dispatch('compressImage', { 
+            file, 
+            quality: compressQuality || 85 
+          })
+        }
+        
+        // 从后端获取上传凭证
+        const filename = state.uploadConfig.autoRename ? `${Date.now()}_${file.name}` : file.name
+        
+        const tokenResponse = await axios.get(`${API_BASE_URL}/token`, {
+          params: { filename }
+        })
+        
+        if (!tokenResponse.data.success) {
+          throw new Error(tokenResponse.data.message || '获取上传凭证失败')
+        }
+        
+        const { token, key, domain, filename: generatedFilename } = tokenResponse.data.data
+        console.log('后端生成的文件信息:', { key, filename: generatedFilename });
+        
+        // 上传文件到存储服务
+        const formData = new FormData()
+        formData.append('file', processedFile)
+        formData.append('token', token)
+        formData.append('key', key)
+        
+        const uploadResponse = await axios.post('https://upload.qiniup.com', formData, {
+          headers: {
+            'Content-Type': 'multipart/form-data'
           }
         })
         
-        // 等待所有上传任务完成
-        await Promise.all(uploadTasks)
+        // 构建图片信息
+        const imageUrl = `${domain.startsWith('http') ? domain : `http://${domain}`}/${uploadResponse.data.key}`
         
-        // 如果有上传成功的图片，保存到状态
-        if (uploadedImages.length > 0) {
-          commit('ADD_IMAGES', uploadedImages)
+        // 获取图片原始尺寸
+        const dimensions = await dispatch('getImageDimensions', processedFile)
+        
+        // 获取真实IP地址
+        const ipAddress = await dispatch('getUserIP')
+        
+        // 确保保存原始图片格式
+        // 从原始文件名中提取格式而不是从MIME类型中提取，以防MIME类型被修改
+        const originalFormat = file.name.split('.').pop().toLowerCase();
+        const formatFromMime = file.type.split('/')[1];
+        
+        console.log(`保存图片信息 - 原始格式(文件名): ${originalFormat}, MIME类型格式: ${formatFromMime}`);
+        
+        // 保存图片信息到数据库
+        const imageData = {
+          title: generatedFilename || file.name, // 使用后端生成的文件名作为标题
+          filename: generatedFilename || file.name, // 使用后端生成的文件名
+          url: imageUrl,
+          key: uploadResponse.data.key,
+          fileSize: processedFile.size,
+          width: dimensions.width,
+          height: dimensions.height,
+          format: originalFormat, // 使用原始文件扩展名作为格式
+          folderId: folderId, // 确保文件夹ID被正确传递
+          ipAddress: ipAddress, // 确保IP地址被正确传递
+          tags // 添加标签
         }
         
-        // 如果有失败的上传，显示错误信息
-        if (failedFiles.length > 0) {
-          console.error('部分文件上传失败:', failedFiles)
-          throw new Error(`${failedFiles.length}个文件上传失败`)
+        console.log('准备保存图片信息，包含文件夹ID:', folderId)
+        
+        // 调用后端API保存图片信息
+        const saveResponse = await axios.post(`${API_BASE_URL}/images`, imageData)
+        
+        if (!saveResponse.data.success) {
+          throw new Error(saveResponse.data.message || '保存图片信息失败')
         }
         
-        return uploadedImages
+        // 获取保存的图片信息，包含ID等
+        const savedImage = saveResponse.data.data
+        
+        // 更新本地状态
+        const processedImage = {
+          id: savedImage._id,
+          filename: savedImage.title || savedImage.filename,
+          title: savedImage.title,
+          url: savedImage.url,
+          key: savedImage.key,
+          size: savedImage.fileSize,
+          width: savedImage.width,
+          height: savedImage.height,
+          mimetype: `image/${savedImage.format}`,
+          uploadTime: savedImage.createdAt,
+          tags: savedImage.tags || [],
+          folder: savedImage.folder || null,
+          isPublic: savedImage.isPublic,
+          isAnonymous: savedImage.isAnonymous,
+          ipAddress: savedImage.ipAddress || '未记录'
+        }
+        
+        commit('ADD_IMAGE', processedImage)
+        
+        // 如果有标签，更新标签列表
+        if (tags && tags.length > 0) {
+          dispatch('fetchTags')
+        }
+        
+        // 如果上传到了文件夹，更新文件夹列表并重新获取图片列表
+        if (folderId) {
+          await dispatch('fetchFolders')
+          await dispatch('fetchImages', { forceRefresh: true })
+        }
+        
+        return processedImage
       } catch (error) {
         console.error('上传图片失败:', error)
         throw error
@@ -1066,6 +994,13 @@ export default createStore({
     
     // 压缩图片的工具函数
     async compressImage(_, { file, quality = 85 }) {
+      // 如果是GIF格式，直接返回原文件，不进行压缩
+      // GIF是动画格式，通过Canvas压缩会丢失动画效果
+      if (file.type === 'image/gif') {
+        console.log('检测到GIF格式图片，跳过压缩以保留动画效果');
+        return file;
+      }
+      
       return new Promise((resolve, reject) => {
         const reader = new FileReader()
         reader.readAsDataURL(file)
@@ -1080,23 +1015,53 @@ export default createStore({
             const ctx = canvas.getContext('2d')
             ctx.drawImage(img, 0, 0)
             
-            // 转换为blob
+            // 确保使用原始文件类型进行压缩
+            const originalType = file.type;
+            console.log(`使用原始类型进行压缩: ${originalType}`);
+            
+            // 转换为blob，保留原始格式
             canvas.toBlob(blob => {
               if (!blob) {
                 reject(new Error('图片压缩失败'))
                 return
               }
-              // 创建一个新的File对象
+              // 创建一个新的File对象，保留原始类型
               const compressedFile = new File([blob], file.name, {
-                type: blob.type,
+                type: originalType, // 确保使用原始类型，而不是blob.type
                 lastModified: Date.now()
               })
               resolve(compressedFile)
-            }, file.type, quality / 100)
+            }, originalType, quality / 100) // 使用原始类型生成blob
           }
           img.onerror = () => reject(new Error('图片加载失败'))
         }
         reader.onerror = () => reject(new Error('文件读取失败'))
+      })
+    },
+    
+    // 获取图片尺寸
+    async getImageDimensions(_, file) {
+      return new Promise((resolve, reject) => {
+        const img = new Image()
+        img.onload = () => {
+          resolve({
+            width: img.width,
+            height: img.height
+          })
+        }
+        img.onerror = () => {
+          reject(new Error('无法获取图片尺寸'))
+        }
+        
+        // 从文件创建URL并设置到img上
+        const reader = new FileReader()
+        reader.onload = (e) => {
+          img.src = e.target.result
+        }
+        reader.onerror = () => {
+          reject(new Error('读取文件失败'))
+        }
+        reader.readAsDataURL(file)
       })
     },
     

@@ -159,11 +159,75 @@
             </template>
           </el-table-column>
           
-          <el-table-column prop="name" label="文件名" min-width="180"></el-table-column>
+          <el-table-column prop="name" label="文件名" min-width="180">
+            <template #default="scope">
+              <div class="filename-edit">
+                <el-input
+                  v-if="scope.row.isRenaming"
+                  v-model="scope.row.name"
+                  size="small"
+                  @blur="finishRenaming(scope.row)"
+                  @keyup.enter="finishRenaming(scope.row)"
+                  placeholder="输入新文件名"
+                  clearable
+                ></el-input>
+                <div v-else class="filename-display">
+                  {{ scope.row.name }}
+                  <el-button
+                    type="primary"
+                    size="small"
+                    text
+                    @click="startRenaming(scope.row)"
+                  >
+                    <el-icon><Edit /></el-icon>
+                  </el-button>
+                </div>
+              </div>
+            </template>
+          </el-table-column>
           
           <el-table-column label="大小" width="120">
             <template #default="scope">
               {{ formatFileSize(scope.row.size) }}
+            </template>
+          </el-table-column>
+          
+          <el-table-column label="文件夹" width="160">
+            <template #default="scope">
+              <el-select
+                v-model="scope.row.folder"
+                placeholder="选择文件夹"
+                size="small"
+                clearable
+                style="width: 130px"
+              >
+                <el-option
+                  v-for="folder in folders"
+                  :key="folder.id"
+                  :label="folder.name"
+                  :value="folder.id"
+                ></el-option>
+              </el-select>
+            </template>
+          </el-table-column>
+          
+          <el-table-column label="标签" min-width="200">
+            <template #default="scope">
+              <el-select
+                v-model="scope.row.tags"
+                multiple
+                placeholder="选择标签"
+                size="small"
+                style="width: 100%"
+                collapse-tags
+              >
+                <el-option
+                  v-for="tag in tags"
+                  :key="tag.name"
+                  :label="tag.name"
+                  :value="tag.name"
+                ></el-option>
+              </el-select>
             </template>
           </el-table-column>
           
@@ -328,11 +392,29 @@ export default {
     const autoRename = ref(store.state.uploadConfig.autoRename)
     const maxSizeMB = computed(() => store.state.uploadConfig.maxSize)
     const allowedTypes = computed(() => store.state.uploadConfig.allowedTypes)
+    const compressQuality = ref(85) // 默认压缩质量
+    const convertFormat = ref(false) // 是否转换格式
+    const targetFormat = ref('webp') // 默认目标格式
     
     // 上传队列和结果
     const uploadQueue = ref([])
     const uploadResults = ref([])
     const isUploading = ref(false)
+    const uploadProgress = ref(0)
+    
+    // 添加文件夹和标签状态
+    const folders = ref([])
+    const tags = ref([])
+    
+    // 预览压缩结果
+    const previewCompressed = ref(false)
+    const originalPreview = ref(null)
+    const compressedPreview = ref(null)
+    const compressionStats = ref({
+      original: 0,
+      compressed: 0,
+      savedPercent: 0
+    })
     
     // 拖拽处理
     const onDragOver = () => {
@@ -366,13 +448,37 @@ export default {
       const imageFiles = files.filter(file => {
         // 检查文件类型是否为图片
         const isImage = file.type.startsWith('image/')
+        
+        // 检查是否在允许的文件类型列表中
         const isAllowedType = allowedTypes.value.includes(file.type)
+        
+        // 检查文件大小是否符合限制
         const isSizeValid = file.size <= maxSizeMB.value * 1024 * 1024
 
+        // 显示适当的错误消息
         if (!isImage) {
           ElMessage.warning(`${file.name} 不是图片文件`)
         } else if (!isAllowedType) {
-          ElMessage.warning(`${file.name} 格式不支持，仅支持 ${allowedTypes.value.map(type => type.split('/')[1].toUpperCase()).join(', ')}`)
+          const supportedFormats = allowedTypes.value.map(type => {
+            // 提取格式名称
+            const formatName = type.split('/')[1]
+            return formatName.toUpperCase()
+          }).join(', ')
+          
+          // 显示更详细的错误信息
+          ElMessage.warning({
+            duration: 5000,
+            showClose: true,
+            dangerouslyUseHTMLString: true,
+            message: `<div>
+              <p><strong>${file.name}</strong> 格式不支持</p>
+              <p>文件类型: ${file.type}</p>
+              <p>请在系统设置中选择允许此类型的文件</p>
+              <p>当前支持的格式: ${supportedFormats}</p>
+            </div>`
+          })
+          
+          console.log(`文件 ${file.name} 类型 ${file.type} 不在允许列表中`, allowedTypes.value)
         } else if (!isSizeValid) {
           ElMessage.warning(`${file.name} 超过大小限制 ${maxSizeMB.value}MB`)
         }
@@ -391,7 +497,10 @@ export default {
             name: file.name,
             size: file.size,
             type: file.type,
-            preview: e.target.result
+            preview: e.target.result,
+            folder: '', // 默认为空，用户可选择
+            tags: [], // 默认为空数组，用户可添加
+            isRenaming: false // 重命名状态控制
           })
         }
         reader.readAsDataURL(file)
@@ -408,6 +517,20 @@ export default {
       uploadQueue.value = []
     }
     
+    // 开始/结束重命名
+    const startRenaming = (item) => {
+      item.isRenaming = true
+    }
+    
+    const finishRenaming = (item) => {
+      item.isRenaming = false
+      
+      // 如果名称为空，恢复原名
+      if (!item.name || item.name.trim() === '') {
+        item.name = item.file.name
+      }
+    }
+    
     // 上传处理
     const startUpload = async () => {
       if (uploadQueue.value.length === 0) {
@@ -416,24 +539,92 @@ export default {
       }
       
       isUploading.value = true
+      uploadProgress.value = 0
+      uploadResults.value = []
+      
+      const totalFiles = uploadQueue.value.length
+      let uploadedCount = 0
+      let successCount = 0
+      let failedCount = 0
       
       try {
-        // 获取上传文件
-        const files = uploadQueue.value.map(item => item.file)
+        for (const item of uploadQueue.value) {
+          try {
+            // 准备上传参数
+            let uploadOptions = {
+              file: item.file,
+              compress: compress.value,
+              compressQuality: compressQuality.value,
+              convertFormat: convertFormat.value ? targetFormat.value : null
+            }
+            
+            // 添加文件夹和标签信息
+            if (item.folder) {
+              uploadOptions.folderId = item.folder
+            }
+            
+            if (item.tags && item.tags.length > 0) {
+              uploadOptions.tags = item.tags
+            }
+            
+            // 如果文件名被修改，更新file对象
+            if (item.name !== item.file.name) {
+              // 创建新的File对象，但保留原文件的内容和类型
+              const newFile = new File([item.file], item.name, { type: item.file.type })
+              uploadOptions.file = newFile
+            }
+            
+            // 调用上传函数
+            const result = await store.dispatch('uploadImage', uploadOptions)
+            
+            uploadResults.value.push({
+              success: true,
+              name: item.name,
+              url: result.url,
+              id: result.id,
+              markdownLink: `![${item.name}](${result.url})`,
+              htmlLink: `<img src="${result.url}" alt="${item.name}" />`,
+              title: item.name,
+              message: '上传成功'
+            })
+            successCount++
+          } catch (error) {
+            console.error(`上传失败: ${item.name}`, error)
+            
+            uploadResults.value.push({
+              success: false,
+              name: item.name,
+              message: error.message || '上传失败'
+            })
+            failedCount++
+            
+            // 显示错误消息
+            ElMessage.error({
+              duration: 5000,
+              showClose: true,
+              message: `${item.name} 上传失败: ${error.message || '未知错误'}`
+            })
+          }
+          
+          // 更新进度
+          uploadedCount++
+          uploadProgress.value = Math.round((uploadedCount / totalFiles) * 100)
+        }
         
-        // 调用store上传方法，将真实处理上传到七牛云
-        const results = await store.dispatch('uploadImages', files)
+        // 上传完成后清空队列
+        uploadQueue.value = []
         
-        // 更新上传结果
-        uploadResults.value = [...results, ...uploadResults.value]
-        
-        ElMessage.success(`成功上传 ${files.length} 个文件`)
-        
-        // 清空队列
-        clearQueue()
+        // 根据上传结果显示不同的消息
+        if (failedCount === 0 && successCount > 0) {
+          ElMessage.success(`上传完成，所有 ${successCount} 个文件已成功上传`)
+        } else if (successCount === 0) {
+          ElMessage.error(`上传失败，所有 ${failedCount} 个文件都未能上传`)
+        } else {
+          ElMessage.warning(`上传完成，但有部分失败: ${successCount} 个成功，${failedCount} 个失败`)
+        }
       } catch (error) {
-        console.error('上传失败:', error)
-        ElMessage.error('上传失败，请重试')
+        console.error('批量上传失败', error)
+        ElMessage.error('上传过程发生错误: ' + (error.message || '未知错误'))
       } finally {
         isUploading.value = false
       }
@@ -593,6 +784,25 @@ export default {
       document.addEventListener('paste', handlePaste)
     }
     
+    // 获取文件夹和标签列表
+    const fetchFolders = async () => {
+      try {
+        const result = await store.dispatch('fetchFolders')
+        folders.value = result || []
+      } catch (error) {
+        console.error('获取文件夹列表失败:', error)
+      }
+    }
+    
+    const fetchTags = async () => {
+      try {
+        const result = await store.dispatch('fetchTags')
+        tags.value = result || []
+      } catch (error) {
+        console.error('获取标签列表失败:', error)
+      }
+    }
+    
     // 生命周期钩子
     onMounted(() => {
       setupPasteListener()
@@ -605,6 +815,10 @@ export default {
       watch(autoRename, (newValue) => {
         store.commit('SET_UPLOAD_CONFIG', { autoRename: newValue })
       })
+      
+      // 在组件挂载时加载文件夹和标签列表
+      fetchFolders()
+      fetchTags()
     })
     
     onUnmounted(() => {
@@ -620,6 +834,13 @@ export default {
       uploadQueue,
       uploadResults,
       isUploading,
+      uploadProgress,
+      folders,
+      tags,
+      previewCompressed,
+      originalPreview,
+      compressedPreview,
+      compressionStats,
       onDragOver,
       onDragLeave,
       onDrop,
@@ -638,7 +859,9 @@ export default {
       formatFileSize,
       viewImage,
       editImage,
-      deleteImage
+      deleteImage,
+      startRenaming,
+      finishRenaming
     }
   }
 }
@@ -1008,5 +1231,15 @@ export default {
   display: flex;
   align-items: center;
   justify-content: space-between;
+}
+
+.filename-edit {
+  display: flex;
+  align-items: center;
+}
+
+.filename-display {
+  display: flex;
+  align-items: center;
 }
 </style> 

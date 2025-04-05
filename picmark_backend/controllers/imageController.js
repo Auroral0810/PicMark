@@ -2,6 +2,49 @@ const Image = require('../models/image.model');
 const { deleteFile } = require('../utils/qiniu-sdk');
 const { validationResult } = require('express-validator');
 const Folder = require('../models/folder.model');
+const { networkInterfaces } = require('os');
+
+/**
+ * 获取真实IP地址的辅助函数
+ * 如果是本地开发环境，尝试获取局域网IP
+ */
+function getRealIpAddress(req) {
+  // 获取客户端原始IP
+  const clientIP = req.headers['x-forwarded-for'] || 
+                 req.connection.remoteAddress || 
+                 req.socket.remoteAddress || 
+                 req.ip || 
+                 '未知';
+  
+  // 如果是本地回环地址（localhost），则获取本机的局域网IP
+  let finalIP = clientIP;
+  if (clientIP === '::1' || clientIP === '127.0.0.1') {
+    // 尝试获取本机局域网IP
+    const nets = networkInterfaces();
+    
+    // 查找非内部的IPv4地址
+    for (const name of Object.keys(nets)) {
+      for (const net of nets[name]) {
+        // 跳过内部和非IPv4地址
+        if (net.family === 'IPv4' && !net.internal) {
+          finalIP = net.address;
+          break;
+        }
+      }
+      if (finalIP !== clientIP) break; // 如果已找到外部IP，跳出循环
+    }
+    
+    // 如果仍然没有找到，使用一个更有意义的本地IP
+    if (finalIP === '::1' || finalIP === '127.0.0.1') {
+      finalIP = '192.168.1.100'; // 使用一个典型的局域网IP
+    }
+  }
+  
+  console.log('原始客户端IP地址:', clientIP);
+  console.log('最终使用的IP地址:', finalIP);
+  
+  return finalIP;
+}
 
 // 保存图片信息
 exports.saveImage = async (req, res) => {
@@ -15,6 +58,12 @@ exports.saveImage = async (req, res) => {
       });
     }
 
+    // 输出完整请求体以帮助调试
+    console.log('接收到上传图片请求，完整请求体:', JSON.stringify(req.body, null, 2));
+
+    // 获取客户端真实IP地址
+    const finalIP = getRealIpAddress(req);
+
     const {
       title,
       description,
@@ -25,8 +74,59 @@ exports.saveImage = async (req, res) => {
       height,
       fileSize,
       format,
-      ipAddress
+      ipAddress, // 前端提供的IP（现在会忽略这个值）
+      folderId // 获取文件夹ID
     } = req.body;
+
+    // 获取系统设置
+    const Settings = require('../models/settings');
+    const systemSettings = await Settings.findOne({ type: 'system' });
+    
+    console.log('找到系统设置:', systemSettings ? '是' : '否');
+    
+    if (systemSettings && systemSettings.settings && systemSettings.settings.upload) {
+      const uploadSettings = systemSettings.settings.upload;
+      console.log('上传设置:', JSON.stringify(uploadSettings, null, 2));
+      
+      // 验证文件大小
+      const maxSizeBytes = (uploadSettings.maxSize || 10) * 1024 * 1024; // 默认10MB
+      console.log(`文件大小验证: ${fileSize} bytes (${fileSize/1024/1024}MB), 限制: ${maxSizeBytes} bytes (${uploadSettings.maxSize || 10}MB)`);
+      
+      if (fileSize > maxSizeBytes) {
+        console.log('文件大小超出限制，拒绝上传');
+        return res.status(400).json({
+          success: false,
+          message: `文件大小超出限制，最大允许${uploadSettings.maxSize || 10}MB`
+        });
+      }
+      
+      // 验证文件类型
+      const fileMimeType = `image/${format.toLowerCase()}`;
+      console.log(`文件类型验证: ${fileMimeType}`);
+      
+      if (uploadSettings.allowedTypesMIME && Array.isArray(uploadSettings.allowedTypesMIME)) {
+        console.log('允许的MIME类型:', uploadSettings.allowedTypesMIME);
+        
+        // 检查allowedTypesMIME是否为空数组
+        if (uploadSettings.allowedTypesMIME.length === 0) {
+          console.log('允许的MIME类型为空数组，不验证文件类型');
+        } else {
+          // 执行严格验证
+          if (!uploadSettings.allowedTypesMIME.includes(fileMimeType)) {
+            console.log(`文件类型 ${fileMimeType} 不在允许列表中，拒绝上传`);
+            return res.status(400).json({
+              success: false,
+              message: `不支持的文件类型: ${format}，仅支持: ${uploadSettings.allowedTypesMIME.map(t => t.split('/')[1]).join(', ')}`
+            });
+          }
+          console.log(`文件类型验证通过: ${fileMimeType}`);
+        }
+      } else {
+        console.log('没有设置允许的MIME类型列表或格式不正确，跳过文件类型验证');
+      }
+    } else {
+      console.log('没有找到有效的上传设置，使用默认验证');
+    }
 
     // 创建新图片记录
     const imageData = {
@@ -40,8 +140,25 @@ exports.saveImage = async (req, res) => {
       fileSize,
       format,
       isPublic: true, // 默认公开
-      ipAddress: ipAddress || req.ip || '未知' // 保存IP地址，如果前端未提供则使用请求中的IP
+      ipAddress: finalIP // 使用服务器获取的真实IP地址
     };
+    
+    console.log('处理文件夹ID:', folderId);
+    
+    // 如果提供了文件夹ID，则添加到图片数据中
+    if (folderId) {
+      // 验证文件夹是否存在
+      const folderExists = await Folder.findById(folderId);
+      if (folderExists) {
+        imageData.folder = folderId;
+        
+        // 增加文件夹内图片计数
+        await Folder.findByIdAndUpdate(folderId, { $inc: { imageCount: 1 } });
+        console.log(`文件夹 ${folderId} 存在，已将图片添加到该文件夹`);
+      } else {
+        console.warn(`指定的文件夹ID ${folderId} 不存在`);
+      }
+    }
     
     // 如果用户已登录，添加用户ID
     if (req.user) {
@@ -92,7 +209,7 @@ exports.getImages = async (req, res) => {
     }
 
     // 搜索条件
-    const { keyword, tags, userId, dateFrom, dateTo } = req.query;
+    const { keyword, tags, userId, dateFrom, dateTo, folder } = req.query;
     
     if (keyword) {
       filter.$text = { $search: keyword };
@@ -105,6 +222,11 @@ exports.getImages = async (req, res) => {
     
     if (userId) {
       filter.user = userId;
+    }
+    
+    // 按文件夹过滤
+    if (folder) {
+      filter.folder = folder;
     }
     
     // 日期筛选
@@ -125,7 +247,8 @@ exports.getImages = async (req, res) => {
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(limit)
-      .populate('user', 'username avatar');
+      .populate('user', 'username avatar')
+      .populate('folder', 'name'); // 填充文件夹信息
 
     // 获取总数
     const total = await Image.countDocuments(filter);
@@ -542,8 +665,8 @@ exports.recordImageView = async (req, res) => {
   try {
     const imageId = req.params.id;
     
-    // 获取客户端IP
-    const clientIP = req.headers['x-forwarded-for'] || req.connection.remoteAddress;
+    // 获取客户端真实IP
+    const finalIP = getRealIpAddress(req);
     
     // 获取当前时间
     const viewTime = new Date();
@@ -563,7 +686,7 @@ exports.recordImageView = async (req, res) => {
     
     // 记录访问日志（如果图片模型有此字段）
     if (Array.isArray(image.viewLogs)) {
-      image.viewLogs.push({ ip: clientIP, time: viewTime });
+      image.viewLogs.push({ ip: finalIP, time: viewTime });
       
       // 限制日志数量，只保留最近的100条
       if (image.viewLogs.length > 100) {
@@ -574,7 +697,7 @@ exports.recordImageView = async (req, res) => {
     // 保存修改
     await image.save();
     
-    console.log(`图片 ${imageId} 被 ${clientIP} 在 ${viewTime.toISOString()} 访问，累计访问量: ${image.views}`);
+    console.log(`图片 ${imageId} 被 ${finalIP} 在 ${viewTime.toISOString()} 访问，累计访问量: ${image.views}`);
     
     res.status(200).json({
       success: true,

@@ -492,7 +492,7 @@ export default {
       store.commit('SET_PAGINATION', { currentPage: 1 });
       
       // 主动触发数据加载
-      store.dispatch('fetchImages').then(() => {
+      store.dispatch('fetchImages', { forceRefresh: true }).then(() => {
         // 成功加载数据后再跳转
         router.push({
           name: 'home',
@@ -516,7 +516,7 @@ export default {
       store.commit('SET_PAGINATION', { currentPage: 1 });
       
       // 主动触发数据加载
-      store.dispatch('fetchImages').then(() => {
+      store.dispatch('fetchImages', { forceRefresh: true }).then(() => {
         // 成功加载数据后再跳转
         router.push({
           name: 'home',

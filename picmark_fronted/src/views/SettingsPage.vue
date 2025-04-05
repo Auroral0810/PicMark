@@ -275,11 +275,11 @@
                     <el-input-number
                       v-model="uploadForm.maxSize"
                       :min="1"
-                      :max="20"
+                      :max="50"
                       controls-position="right"
                       class="size-input"
                     ></el-input-number>
-                    <span class="input-unit">MB（最大20MB）</span>
+                    <span class="input-unit">MB（最大50MB）</span>
                   </div>
                   <div class="form-tip">限制单个文件的最大上传大小</div>
                 </el-form-item>
@@ -288,9 +288,17 @@
                   <div class="file-types-container">
                     <el-checkbox-group v-model="uploadForm.allowedTypes" class="file-type-checkboxes">
                       <el-checkbox label="jpeg" border>JPEG</el-checkbox>
+                      <el-checkbox label="jpg" border>JPG</el-checkbox>
                       <el-checkbox label="png" border>PNG</el-checkbox>
                       <el-checkbox label="gif" border>GIF</el-checkbox>
                       <el-checkbox label="webp" border>WebP</el-checkbox>
+                      <el-checkbox label="svg" border>SVG</el-checkbox>
+                      <el-checkbox label="bmp" border>BMP</el-checkbox>
+                      <el-checkbox label="tiff" border>TIFF</el-checkbox>
+                      <el-checkbox label="avif" border>AVIF</el-checkbox>
+                      <el-checkbox label="ico" border>ICO</el-checkbox>
+                      <el-checkbox label="heic" border>HEIC</el-checkbox>
+                      <el-checkbox label="heif" border>HEIF</el-checkbox>
                     </el-checkbox-group>
                   </div>
                   <div class="form-tip">选择允许上传的图片文件类型</div>
@@ -690,7 +698,7 @@ export default {
       compress: true,
       compressQuality: 85,
       maxSize: 5,
-      allowedTypes: ['jpg', 'jpeg', 'png', 'gif', 'webp','heic']
+      allowedTypes: ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp', 'tiff', 'avif', 'ico', 'heic', 'heif']
     })
     
     const uploadSaving = ref(false)
@@ -891,68 +899,58 @@ export default {
     
     // 保存上传设置
     const saveUploadSettings = async () => {
-      uploadSaving.value = true;
+      uploadSaving.value = true
       
       try {
-        // 验证输入
-        if (uploadForm.maxSize < 1 || uploadForm.maxSize > 20) {
-          ElMessage.warning('文件大小限制必须在1-20MB之间');
-          uploadSaving.value = false;
-          return;
+        // 将选中的文件类型转换为MIME类型格式再保存
+        const mimeTypesMap = {
+          'jpeg': 'image/jpeg',
+          'jpg': 'image/jpg',
+          'png': 'image/png',
+          'gif': 'image/gif',
+          'webp': 'image/webp',
+          'svg': 'image/svg+xml',
+          'bmp': 'image/bmp',
+          'tiff': 'image/tiff',
+          'avif': 'image/avif',
+          'ico': 'image/x-icon',
+          'heic': 'image/heic',
+          'heif': 'image/heif'
         }
         
-        if (!uploadForm.allowedTypes || uploadForm.allowedTypes.length === 0) {
-          ElMessage.warning('请至少选择一种允许的文件类型');
-          uploadSaving.value = false;
-          return;
-        }
+        // 制作设置数据的副本
+        const uploadSettings = { ...uploadForm }
         
-        // 准备上传设置数据
-        const uploadSettings = {
-          renameType: uploadForm.renameType,
-          customNamePattern: uploadForm.customNamePattern,
-          compress: uploadForm.compress,
-          compressQuality: uploadForm.compressQuality,
-          maxSize: uploadForm.maxSize,
-          allowedTypes: uploadForm.allowedTypes
-        };
+        // 将文件类型扩展名转换为MIME类型
+        uploadSettings.allowedTypesMIME = uploadSettings.allowedTypes.map(ext => mimeTypesMap[ext])
         
-        // 发送到后端API
+        // 保存设置到后端
         const response = await axios.post(`${API_BASE_URL}/settings/system`, {
           upload: uploadSettings
-        });
+        })
         
         if (response.data.success) {
-          ElMessage.success('上传设置保存成功');
+          ElMessage.success('上传设置已保存')
           
-          // 更新本地Vuex存储中的上传设置
-          store.commit('SET_SETTINGS', {
-            uploadConfig: {
-              compress: uploadForm.compress,
-              compressQuality: uploadForm.compressQuality,
-              autoRename: uploadForm.renameType !== 'original',
-              maxSize: uploadForm.maxSize,
-              allowedTypes: uploadForm.allowedTypes.map(type => `image/${type}`)
-            }
-          });
+          // 同时更新Vuex state中的设置
+          store.commit('SET_UPLOAD_CONFIG', {
+            maxSize: uploadSettings.maxSize,
+            compress: uploadSettings.compress,
+            compressQuality: uploadSettings.compressQuality,
+            allowedTypes: uploadSettings.allowedTypesMIME, // 使用MIME类型更新store
+            autoRename: uploadSettings.renameType !== 'original',
+            renameType: uploadSettings.renameType
+          })
         } else {
-          ElMessage.error(response.data.message || '保存设置失败');
+          ElMessage.error(response.data.message || '保存设置失败')
         }
       } catch (error) {
-        console.error('保存上传设置失败:', error);
-        
-        // 显示更详细的错误信息
-        if (error.response) {
-          ElMessage.error(`保存失败: ${error.response.data?.message || '服务器响应错误'}`);
-        } else if (error.request) {
-          ElMessage.error('网络请求失败，请检查网络连接');
-        } else {
-          ElMessage.error(`保存失败: ${error.message}`);
-        }
+        console.error('保存上传设置失败:', error)
+        ElMessage.error('保存设置失败，请检查网络连接')
       } finally {
-        uploadSaving.value = false;
+        uploadSaving.value = false
       }
-    };
+    }
     
     // 重置上传设置
     const resetUploadSettings = () => {

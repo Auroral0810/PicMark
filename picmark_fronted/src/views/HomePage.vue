@@ -19,6 +19,19 @@
       </div>
       
       <div class="header-right">
+        <!-- 返回全部图片按钮（当有筛选条件时显示） -->
+        <el-button
+          v-if="hasActiveFilters || $route.query.folder || $route.query.tag"
+          type="primary"
+          plain
+          size="small"
+          @click="showAllImages"
+          class="show-all-button"
+        >
+          <el-icon><Back /></el-icon>
+          返回全部图片
+        </el-button>
+      
         <!-- 搜索框 -->
         <div class="search-box">
           <el-input 
@@ -1130,10 +1143,9 @@ export default {
     }
     
     const clearFilters = () => {
-      searchKeyword.value = ''
+      store.commit('CLEAR_FILTERS')
       dateRange.value = null
       selectedTags.value = []
-      store.commit('CLEAR_FILTERS')
     }
     
     const handlePageChange = (page) => {
@@ -1876,6 +1888,28 @@ export default {
       }
     }
 
+    // 显示所有图片，清除所有筛选条件并返回主页
+    const showAllImages = () => {
+      // 清除所有筛选条件
+      store.commit('CLEAR_FILTERS')
+      dateRange.value = null
+      selectedTags.value = []
+      
+      // 重置分页
+      currentPage.value = 1
+      
+      // 更新URL，移除查询参数
+      router.push({
+        path: '/',
+        query: {}
+      })
+      
+      // 重新获取图片数据
+      store.dispatch('fetchImages', { forceRefresh: true })
+      
+      ElMessage.success('显示所有图片')
+    }
+
     return {
       viewMode,
       loading,
@@ -1896,6 +1930,7 @@ export default {
       handleSearch,
       handleFilterChange,
       clearFilters,
+      showAllImages,
       handleSortChange,
       handlePageChange,
       formatFileSize,

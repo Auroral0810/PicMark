@@ -476,6 +476,10 @@ export default {
     const convertFormat = ref(false)
     const targetFormat = ref('webp')
     const autoRename = ref(store.state.uploadConfig.autoRename)
+    const addWatermark = ref(false)
+    
+    // 图片URL输入框
+    const imageUrl = ref('')
     
     // 从store中获取文件限制
     const allowedTypes = computed(() => store.state.uploadConfig.allowedTypes)
@@ -770,14 +774,16 @@ export default {
       try {
         for (const item of uploadQueue.value) {
           try {
-            console.log(`开始上传图片: ${item.name}, 压缩: ${compress.value ? '启用' : '禁用'}, 质量: ${compressQuality.value}%`);
+            console.log(`开始上传图片: ${item.name}, 压缩: ${compress.value ? '启用' : '禁用'}, 质量: ${compressQuality.value}%, 水印: ${addWatermark.value ? '启用' : '禁用'}`);
             
             // 准备上传参数
             let uploadOptions = {
               file: item.file,
               compress: compress.value,
               compressQuality: compressQuality.value,
-              convertFormat: convertFormat.value ? targetFormat.value : null
+              convertFormat: convertFormat.value ? targetFormat.value : null,
+              addWatermark: addWatermark.value,
+              folderId: item.folder
             }
             
             // 添加文件夹和标签信息
@@ -870,6 +876,80 @@ export default {
         console.error('复制失败:', err)
         ElMessage.error('复制失败')
       })
+    }
+    
+    // 从URL获取图片
+    const fetchImageFromURL = async () => {
+      if (!imageUrl.value) {
+        ElMessage.warning('请输入图片URL');
+        return;
+      }
+      
+      // 验证URL格式
+      // let url;
+      try {
+        // url = new URL(imageUrl.value);
+      } catch (error) {
+        ElMessage.error('无效的URL格式');
+        return;
+      }
+      
+      try {
+        ElMessage.info('正在获取图片，请稍候...');
+        
+        // 导入axios
+        const axios = await import('axios').then(m => m.default);
+        
+        // 通过后端代理获取图片，避免跨域问题
+        const API_BASE_URL = 'http://localhost:3000/api';
+        const response = await axios.get(`${API_BASE_URL}/proxy`, {
+          params: { url: imageUrl.value },
+          responseType: 'blob'
+        });
+        
+        // 获取文件类型，默认为image/jpeg
+        const contentType = response.headers['content-type'] || 'image/jpeg';
+        if (!contentType.startsWith('image/')) {
+          throw new Error('获取的不是图片文件');
+        }
+        
+        // 从URL中提取文件名
+        const urlObj = new URL(imageUrl.value);
+        const pathname = urlObj.pathname;
+        const fileName = pathname.split('/').pop() || 'image.jpg';
+        
+        // 创建文件对象
+        const blob = new Blob([response.data], { type: contentType });
+        const file = new File([blob], fileName, { 
+          type: contentType,
+          lastModified: Date.now()
+        });
+        
+        // 添加到上传队列
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          uploadQueue.value.push({
+            file,
+            name: fileName,
+            size: file.size,
+            type: file.type,
+            preview: e.target.result,
+            folder: '',
+            tags: [],
+            isRenaming: false
+          });
+          
+          // 清空输入框
+          imageUrl.value = '';
+          
+          ElMessage.success(`已添加图片 "${fileName}" 到上传队列`);
+        };
+        reader.readAsDataURL(file);
+        
+      } catch (error) {
+        console.error('获取远程图片失败:', error);
+        ElMessage.error('获取图片失败: ' + (error.message || '请检查URL或网络连接'));
+      }
     }
     
     const copyImageUrl = (image) => {
@@ -1064,6 +1144,8 @@ export default {
       convertFormat,
       targetFormat,
       autoRename,
+      addWatermark,
+      imageUrl,
       maxSizeMB,
       uploadQueue,
       uploadResults,
@@ -1098,6 +1180,7 @@ export default {
       deleteImage,
       startRenaming,
       finishRenaming,
+      fetchImageFromURL,
       getCompressionColor: (percent) => {
         const value = Number(percent);
         if (value > 50) return '#67C23A'; // 优秀 - 绿色

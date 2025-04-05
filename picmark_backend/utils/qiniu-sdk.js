@@ -39,8 +39,33 @@ const generateFileName = (originalName, opts = {}) => {
     日期目录: dateFolder
   });
   
+  // 处理格式转换 - 确保文件扩展名与转换格式匹配
+  const { convertFormat } = opts;
+  let processedName = originalName;
+  
+  if (convertFormat) {
+    console.log(`执行格式转换: ${convertFormat}`);
+    // 移除原始扩展名
+    const baseName = originalName.replace(/\.[^/.]+$/, '');
+    // 添加新扩展名
+    switch (convertFormat) {
+      case 'webp':
+        processedName = `${baseName}.webp`;
+        break;
+      case 'jpeg':
+        processedName = `${baseName}.jpg`;
+        break;
+      case 'png':
+        processedName = `${baseName}.png`;
+        break;
+      default:
+        console.log(`未知的转换格式 "${convertFormat}"，使用原始文件名`);
+    }
+    console.log(`文件格式已转换: ${originalName} -> ${processedName}`);
+  }
+  
   // 获取文件扩展名（保持原始大小写）
-  const extWithDot = originalName.match(/\.[^.]+$/);
+  const extWithDot = processedName.match(/\.[^.]+$/);
   const ext = extWithDot ? extWithDot[0].toLowerCase().substring(1) : '';
   
   // 按策略生成新文件名
@@ -54,7 +79,7 @@ const generateFileName = (originalName, opts = {}) => {
     case 'original':
       // 使用原始文件名，但添加时间戳前缀以避免冲突
       const timestamp = now.getTime();
-      newFileName = `${timestamp}_${originalName}`;
+      newFileName = `${timestamp}_${processedName}`;
       console.log(`使用原始文件名策略: ${newFileName}`);
       break;
       
@@ -83,7 +108,7 @@ const generateFileName = (originalName, opts = {}) => {
       
     default:
       // 默认使用原始文件名
-      newFileName = originalName;
+      newFileName = processedName;
       console.log(`使用默认命名策略: ${newFileName}`);
   }
   

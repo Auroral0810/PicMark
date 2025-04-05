@@ -1,58 +1,63 @@
 const express = require('express');
-const cors = require('cors');
-const helmet = require('helmet');
-const morgan = require('morgan');
 const path = require('path');
+const cors = require('cors');
+const mongoose = require('mongoose');
+const morgan = require('morgan');
+require('dotenv').config();
 
-// 引入路由
-const apiRoutes = require('./routes/api.routes');
+// 导入路由
 const imageRoutes = require('./routes/image.routes');
 const userRoutes = require('./routes/user.routes');
 const uploadRoutes = require('./routes/upload.routes');
 const folderRoutes = require('./routes/folder.routes');
 const tagRoutes = require('./routes/tag.routes');
+const proxyRouter = require('./routes/proxy');  // 添加代理路由
+const apiRoutes = require('./routes/api.routes'); // 导入API路由
 
 const app = express();
 
-// 中间件
-app.use(helmet()); // 安全头
-app.use(cors()); // 跨域支持
-app.use(morgan('dev')); // 日志
-app.use(express.json()); // JSON解析
+// 设置CORS
+app.use(cors());
+
+// 请求日志
+app.use(morgan('dev'));
+
+// 解析JSON请求体
+app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// 创建上传目录
-app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+// 设置静态文件目录
+app.use(express.static(path.join(__dirname, 'public')));
 
-// API路由
-app.use('/api', apiRoutes);
+// 使用路由
+app.use('/api', apiRoutes); // 使用API路由
 app.use('/api/images', imageRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/token', uploadRoutes);
 app.use('/api/folders', folderRoutes);
 app.use('/api/tags', tagRoutes);
+app.use('/api/proxy', proxyRouter);  // 注册代理路由
 
 // 根路由
 app.get('/', (req, res) => {
-  res.json({ message: 'PicMark API 服务运行中' });
-});
-
-// 404处理
-app.use((req, res, next) => {
-  res.status(404).json({ 
-    success: false,
-    message: '找不到请求的资源' 
+  res.json({
+    message: 'PicMark API 服务器运行中'
   });
 });
 
-// 错误处理
+// 处理404错误
+app.use((req, res) => {
+  res.status(404).json({
+    message: '找不到请求的资源'
+  });
+});
+
+// 错误处理中间件
 app.use((err, req, res, next) => {
-  console.error('API错误:', err);
-  const statusCode = err.statusCode || 500;
-  res.status(statusCode).json({
-    success: false,
-    message: err.message || '服务器错误',
-    stack: process.env.NODE_ENV === 'development' ? err.stack : undefined
+  console.error(err.stack);
+  res.status(500).json({
+    message: '服务器内部错误',
+    error: process.env.NODE_ENV === 'development' ? err.message : undefined
   });
 });
 

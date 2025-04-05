@@ -1,6 +1,7 @@
 const qiniu = require('qiniu');
 const config = require('../config/qiniu');
 const { v4: uuidv4 } = require('uuid');
+const crypto = require('crypto');
 
 // 初始化鉴权对象
 const mac = new qiniu.auth.digest.Mac(config.accessKey, config.secretKey);
@@ -18,90 +19,86 @@ const getUploadToken = (key = null) => {
   return putPolicy.uploadToken(mac);
 };
 
-// 生成文件名
-const generateFileName = async (originalFilename) => {
-  try {
-    // 获取系统设置
-    const Settings = require('../models/settings');
-    const systemSettings = await Settings.findOne({ type: 'system' });
-    
-    // 默认为时间戳方式命名
-    let renameType = 'timestamp';
-    
-    // 如果找到设置，使用设置中的命名方式
-    if (systemSettings && systemSettings.settings && systemSettings.settings.upload) {
-      renameType = systemSettings.settings.upload.renameType || 'timestamp';
-    }
-    
-    console.log(`文件命名方式: ${renameType}`);
-    
-    // 提取文件扩展名
-    const ext = originalFilename.split('.').pop().toLowerCase();
-    
-    // 创建日期前缀文件夹(YYYYMMDD格式)
-    const date = new Date();
-    const dateFolder = `${date.getFullYear()}${(date.getMonth()+1).toString().padStart(2, '0')}${date.getDate().toString().padStart(2, '0')}`;
-    
-    // 生成新文件名(不含路径)
-    let newFilename = '';
-    
-    switch (renameType) {
-      case 'original':
-        // 使用原始文件名
-        console.log('使用原始文件名命名方式');
-        newFilename = originalFilename;
-        break;
-        
-      case 'timestamp':
-        // 使用时间戳命名
-        console.log('使用时间戳命名方式');
-        const timestamp = Date.now();
-        // 使用时间戳作为文件名
-        const timeHMS = `${date.getHours().toString().padStart(2, '0')}${date.getMinutes().toString().padStart(2, '0')}${date.getSeconds().toString().padStart(2, '0')}`;
-        newFilename = `${dateFolder}_${timeHMS}_${timestamp}.${ext}`;
-        break;
-        
-      case 'uuid':
-        // 使用UUID命名
-        console.log('使用UUID命名方式');
-        const uuid = uuidv4().replace(/-/g, ''); // 移除UUID中的破折号
-        newFilename = `${uuid}.${ext}`;
-        break;
-        
-      default:
-        // 默认使用时间戳命名
-        console.log('使用默认命名方式(时间戳)');
-        const defaultTimestamp = Date.now();
-        newFilename = `${defaultTimestamp}.${ext}`;
-    }
-    
-    // 完整存储路径 = 日期文件夹 + 文件名
-    // 对于原始文件名模式，我们在存储路径中依然使用日期文件夹组织，但在显示时使用原始文件名
-    const storagePath = renameType === 'original' 
-      ? `${dateFolder}/${Date.now()}_${newFilename}` // 使用时间戳前缀避免同名文件冲突，但返回原始文件名显示
-      : `${dateFolder}/${newFilename}`;
+/**
+ * 生成文件名
+ * 实现多种命名策略：原始名、时间戳、UUID等
+ * 并按日期自动分文件夹
+ */
+const generateFileName = (originalName, opts = {}) => {
+  // 获取当前日期，格式为YYYYMMDD
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  const dateFolder = `${year}${month}${day}`;
+  
+  // 记录调用日志
+  console.log('generateFileName函数被调用:', {
+    原始文件名: originalName,
+    参数: JSON.stringify(opts),
+    日期目录: dateFolder
+  });
+  
+  // 获取文件扩展名（保持原始大小写）
+  const extWithDot = originalName.match(/\.[^.]+$/);
+  const ext = extWithDot ? extWithDot[0].toLowerCase().substring(1) : '';
+  
+  // 按策略生成新文件名
+  let newFileName = '';
+  const namingStrategy = opts.namingStrategy || 'original';
+  
+  // 添加更多详细的日志
+  console.log(`应用文件命名策略: ${namingStrategy}`);
+  
+  switch (namingStrategy) {
+    case 'original':
+      // 使用原始文件名，但添加时间戳前缀以避免冲突
+      const timestamp = now.getTime();
+      newFileName = `${timestamp}_${originalName}`;
+      console.log(`使用原始文件名策略: ${newFileName}`);
+      break;
       
-    console.log(`最终生成的存储路径: ${storagePath}, 文件名: ${newFilename}`);
-    
-    // 返回包含完整路径的文件名 (用于七牛云存储)
-    return {
-      key: storagePath,     // 存储到七牛云的完整路径 (日期目录/文件名)
-      filename: newFilename // 用于显示的文件名
-    };
-  } catch (error) {
-    console.error('生成文件名出错:', error);
-    // 出错时使用默认的时间戳方式
-    const timestamp = Date.now();
-    const date = new Date();
-    const dateFolder = `${date.getFullYear()}${(date.getMonth()+1).toString().padStart(2, '0')}${date.getDate().toString().padStart(2, '0')}`;
-    const ext = originalFilename.split('.').pop().toLowerCase();
-    const fallbackFilename = `error_${timestamp}.${ext}`;
-    
-    return {
-      key: `${dateFolder}/${fallbackFilename}`,
-      filename: fallbackFilename
-    };
+    case 'timestamp':
+      // 使用时间戳命名
+      const hours = String(now.getHours()).padStart(2, '0');
+      const mins = String(now.getMinutes()).padStart(2, '0');
+      const secs = String(now.getSeconds()).padStart(2, '0');
+      const ms = String(now.getMilliseconds()).padStart(3, '0');
+      
+      // 保留原始文件扩展名
+      newFileName = `${year}${month}${day}_${hours}${mins}${secs}_${ms}${extWithDot ? extWithDot[0] : ''}`;
+      console.log(`使用时间戳策略: ${newFileName}`);
+      break;
+      
+    case 'uuid':
+      // 使用UUID命名
+      const uuid = crypto.randomUUID ? crypto.randomUUID() : 
+                   (Math.random().toString(36).substring(2, 15) + 
+                    Math.random().toString(36).substring(2, 15));
+      
+      // 保留原始文件扩展名
+      newFileName = `${uuid}${extWithDot ? extWithDot[0] : ''}`;
+      console.log(`使用UUID策略: ${newFileName}`);
+      break;
+      
+    default:
+      // 默认使用原始文件名
+      newFileName = originalName;
+      console.log(`使用默认命名策略: ${newFileName}`);
   }
+  
+  // 创建完整的存储路径 (key) 和显示文件名
+  const storageKey = `${dateFolder}/${newFileName}`;
+  
+  // 返回包含存储路径和显示文件名的对象
+  const result = {
+    key: storageKey,
+    filename: newFileName
+  };
+  
+  console.log('生成的文件信息:', result);
+  
+  return result;
 };
 
 // 删除文件

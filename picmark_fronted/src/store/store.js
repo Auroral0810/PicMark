@@ -856,6 +856,16 @@ export default createStore({
           tags = []
         } = options
         
+        // 记录详细的上传参数
+        console.log('图片上传开始', {
+          文件名: file.name,
+          文件类型: file.type,
+          文件大小: `${(file.size / 1024 / 1024).toFixed(2)}MB`,
+          启用压缩: compress ? '是' : '否',
+          压缩质量: `${compressQuality}%`,
+          文件夹ID: folderId || '无'
+        });
+        
         // 验证文件类型是否被允许
         if (!file.type.startsWith('image/')) {
           throw new Error('只能上传图片文件')
@@ -878,13 +888,41 @@ export default createStore({
         
         // 处理文件
         let processedFile = file
+        let wasCompressed = false
         
         // 如果需要压缩
         if (compress && file.type.startsWith('image/')) {
-          processedFile = await dispatch('compressImage', { 
-            file, 
-            quality: compressQuality || 85 
-          })
+          console.log(`开始压缩图片: ${file.name}`, {
+            原始大小: `${(file.size/1024).toFixed(2)}KB`,
+            压缩质量: `${compressQuality}%`,
+            文件类型: file.type
+          });
+          
+          try {
+            const originalSize = file.size;
+            processedFile = await dispatch('compressImage', { 
+              file, 
+              quality: compressQuality || 85 
+            });
+            
+            wasCompressed = (processedFile !== file);
+            
+            if (wasCompressed) {
+              console.log('图片压缩完成', {
+                原始大小: `${(originalSize/1024).toFixed(2)}KB`,
+                压缩后大小: `${(processedFile.size/1024).toFixed(2)}KB`,
+                压缩比例: `${((1 - processedFile.size/originalSize) * 100).toFixed(2)}%`,
+                最终文件类型: processedFile.type
+              });
+            } else {
+              console.log('图片未被压缩（使用原始图片）');
+            }
+          } catch (compressError) {
+            console.error('图片压缩失败，将使用原始图片:', compressError);
+            processedFile = file; // 压缩失败时使用原始文件
+          }
+        } else {
+          console.log(`跳过压缩处理: ${!compress ? '压缩功能已禁用' : '不支持的文件类型'}`);
         }
         
         // 从后端获取上传凭证
@@ -907,11 +945,20 @@ export default createStore({
         formData.append('token', token)
         formData.append('key', key)
         
+        console.log('准备上传到七牛云', {
+          文件名: processedFile.name,
+          文件类型: processedFile.type,
+          文件大小: `${(processedFile.size / 1024).toFixed(2)}KB`,
+          存储路径: key
+        });
+        
         const uploadResponse = await axios.post('https://upload.qiniup.com', formData, {
           headers: {
             'Content-Type': 'multipart/form-data'
           }
         })
+        
+        console.log('七牛云上传完成', uploadResponse.data);
         
         // 构建图片信息
         const imageUrl = `${domain.startsWith('http') ? domain : `http://${domain}`}/${uploadResponse.data.key}`
@@ -922,29 +969,44 @@ export default createStore({
         // 获取真实IP地址
         const ipAddress = await dispatch('getUserIP')
         
-        // 确保保存原始图片格式
-        // 从原始文件名中提取格式而不是从MIME类型中提取，以防MIME类型被修改
-        const originalFormat = file.name.split('.').pop().toLowerCase();
-        const formatFromMime = file.type.split('/')[1];
+        // 确保保存原始图片格式或压缩后的新格式
+        let formatInfo = '';
+        if (wasCompressed && processedFile.type !== file.type) {
+          formatInfo = `${file.type.split('/')[1]} -> ${processedFile.type.split('/')[1]}`;
+        } else {
+          formatInfo = file.type.split('/')[1];
+        }
         
-        console.log(`保存图片信息 - 原始格式(文件名): ${originalFormat}, MIME类型格式: ${formatFromMime}`);
+        console.log(`保存图片信息 - 格式: ${formatInfo}, 尺寸: ${dimensions.width}x${dimensions.height}`);
         
         // 保存图片信息到数据库
         const imageData = {
-          title: generatedFilename || file.name, // 使用后端生成的文件名作为标题
-          filename: generatedFilename || file.name, // 使用后端生成的文件名
+          title: generatedFilename || processedFile.name, // 使用后端生成的文件名作为标题
+          filename: generatedFilename || processedFile.name, // 使用后端生成的文件名
           url: imageUrl,
           key: uploadResponse.data.key,
           fileSize: processedFile.size,
           width: dimensions.width,
           height: dimensions.height,
-          format: originalFormat, // 使用原始文件扩展名作为格式
+          format: processedFile.name.split('.').pop().toLowerCase(), // 使用文件扩展名作为格式
           folderId: folderId, // 确保文件夹ID被正确传递
           ipAddress: ipAddress, // 确保IP地址被正确传递
-          tags // 添加标签
+          tags, // 添加标签
+          wasCompressed: wasCompressed, // 标记是否经过压缩
+          compressionInfo: wasCompressed ? {
+            originalSize: file.size,
+            compressedSize: processedFile.size,
+            compressionRatio: ((1 - processedFile.size/file.size) * 100).toFixed(2) + '%',
+            quality: compressQuality
+          } : null
         }
         
-        console.log('准备保存图片信息，包含文件夹ID:', folderId)
+        console.log('准备保存图片信息到数据库:', {
+          文件夹ID: folderId || '无',
+          标签数量: tags.length,
+          图片URL: imageUrl,
+          是否经过压缩: wasCompressed ? '是' : '否'
+        });
         
         // 调用后端API保存图片信息
         const saveResponse = await axios.post(`${API_BASE_URL}/images`, imageData)
@@ -997,51 +1059,134 @@ export default createStore({
       }
     },
     
-    // 压缩图片的工具函数
-    async compressImage(_, { file, quality = 85 }) {
-      // 如果是GIF格式，直接返回原文件，不进行压缩
-      // GIF是动画格式，通过Canvas压缩会丢失动画效果
-      if (file.type === 'image/gif') {
-        console.log('检测到GIF格式图片，跳过压缩以保留动画效果');
+    // 压缩图片
+    async compressImage({ state }, { file, quality = 85 }) {
+      console.log(`===== 开始压缩图片 =====`);
+      console.log(`原始文件: ${file.name}, 类型: ${file.type}, 大小: ${(file.size/1024).toFixed(2)}KB, 压缩质量: ${quality}%`);
+      
+      // 不处理GIF和SVG格式
+      if (file.type === 'image/gif' || file.type === 'image/svg+xml') {
+        console.log(`跳过压缩: ${file.type} 格式不适合压缩处理`);
         return file;
       }
       
       return new Promise((resolve, reject) => {
-        const reader = new FileReader()
-        reader.readAsDataURL(file)
-        reader.onload = event => {
-          const img = new Image()
-          img.src = event.target.result
+        const reader = new FileReader();
+        
+        reader.onload = (event) => {
+          const img = new Image();
+          
+          // 创建图片加载错误处理函数
+          img.onerror = () => {
+            console.error('图片加载失败，将使用原图');
+            resolve(file);
+          };
+          
           img.onload = () => {
-            // 创建canvas绘制压缩图片
-            const canvas = document.createElement('canvas')
-            canvas.width = img.width
-            canvas.height = img.height
-            const ctx = canvas.getContext('2d')
-            ctx.drawImage(img, 0, 0)
-            
-            // 确保使用原始文件类型进行压缩
-            const originalType = file.type;
-            console.log(`使用原始类型进行压缩: ${originalType}`);
-            
-            // 转换为blob，保留原始格式
-            canvas.toBlob(blob => {
-              if (!blob) {
-                reject(new Error('图片压缩失败'))
-                return
+            try {
+              // 获取图片原始尺寸
+              let width = img.width;
+              let height = img.height;
+              
+              console.log(`图片原始尺寸: ${width}x${height}像素`);
+              
+              // 超过最大尺寸时等比例缩小
+              const MAX_DIMENSION = 3000; // 最大尺寸为3000像素
+              if (width > MAX_DIMENSION || height > MAX_DIMENSION) {
+                if (width > height) {
+                  height = Math.round(height * (MAX_DIMENSION / width));
+                  width = MAX_DIMENSION;
+                } else {
+                  width = Math.round(width * (MAX_DIMENSION / height));
+                  height = MAX_DIMENSION;
+                }
+                console.log(`图片尺寸过大，将调整为: ${width}x${height}像素`);
               }
-              // 创建一个新的File对象，保留原始类型
-              const compressedFile = new File([blob], file.name, {
-                type: originalType, // 确保使用原始类型，而不是blob.type
-                lastModified: Date.now()
-              })
-              resolve(compressedFile)
-            }, originalType, quality / 100) // 使用原始类型生成blob
-          }
-          img.onerror = () => reject(new Error('图片加载失败'))
-        }
-        reader.onerror = () => reject(new Error('文件读取失败'))
-      })
+              
+              // 创建canvas并调整大小
+              const canvas = document.createElement('canvas');
+              canvas.width = width;
+              canvas.height = height;
+              
+              // 获取canvas上下文
+              const ctx = canvas.getContext('2d');
+              
+              // 处理透明度，对于PNG保留透明背景
+              if (file.type !== 'image/png') {
+                // 非PNG格式填充白色背景
+                ctx.fillStyle = '#FFFFFF';
+                ctx.fillRect(0, 0, width, height);
+              } else {
+                // PNG保持透明
+                ctx.clearRect(0, 0, width, height);
+              }
+              
+              // 在画布上绘制图片
+              ctx.drawImage(img, 0, 0, width, height);
+              
+              // 保持原始文件类型，不执行格式转换
+              let outputType = file.type;
+              let outputQuality = quality / 100; // 转换为0-1范围
+              
+              // 为PNG设置一个合理的质量值，因为PNG是无损的，这里的质量值主要影响尺寸调整后的效果
+              if (file.type === 'image/png') {
+                console.log(`PNG图片压缩: 保持PNG格式并应用尺寸优化`);
+              }
+              
+              console.log(`应用压缩: 输入=${file.type}, 输出=${outputType}, 质量=${quality}%`);
+              
+              // 将canvas转换为Blob
+              canvas.toBlob((blob) => {
+                if (!blob) {
+                  console.error('压缩失败：无法生成Blob对象');
+                  resolve(file); // 使用原始文件
+                  return;
+                }
+                
+                // 创建新文件对象，保持原始扩展名
+                const compressedFile = new File([blob], file.name, {
+                  type: outputType,
+                  lastModified: Date.now()
+                });
+                
+                // 详细的压缩效果日志
+                const originalSizeKB = (file.size / 1024).toFixed(2);
+                const compressedSizeKB = (compressedFile.size / 1024).toFixed(2);
+                const compressionRatio = ((1 - compressedFile.size / file.size) * 100).toFixed(2);
+                
+                console.log(`===== 压缩结果 =====`);
+                console.log(`原始文件: ${file.name} (${file.type}), 大小: ${originalSizeKB}KB`);
+                console.log(`压缩文件: ${compressedFile.name} (${compressedFile.type}), 大小: ${compressedSizeKB}KB`);
+                console.log(`压缩比例: ${compressionRatio}%, 节省空间: ${(file.size - compressedFile.size)/1024}KB`);
+                
+                // 检查压缩是否有效（至少节省5%）
+                if (compressedFile.size > file.size * 0.95) {
+                  console.log(`压缩无效: 压缩后大小 ${compressedSizeKB}KB >= 原始大小的95% (${(file.size * 0.95 / 1024).toFixed(2)}KB)`);
+                  console.log(`返回原始文件`);
+                  resolve(file); // 如果压缩效果不明显，使用原始文件
+                } else {
+                  console.log(`压缩有效，使用压缩后的文件`);
+                  resolve(compressedFile);
+                }
+              }, outputType, outputQuality);
+            } catch (error) {
+              console.error('压缩过程发生错误:', error);
+              resolve(file); // 出错时使用原始文件
+            }
+          };
+          
+          // 从FileReader结果设置图片源
+          img.src = event.target.result;
+        };
+        
+        reader.onerror = (error) => {
+          console.error('读取文件失败:', error);
+          reject(error);
+        };
+        
+        // 开始读取文件
+        reader.readAsDataURL(file);
+      });
     },
     
     // 获取图片尺寸

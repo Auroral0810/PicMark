@@ -231,25 +231,108 @@
             </template>
           </el-table-column>
           
-          <el-table-column label="操作" width="120">
+          <el-table-column label="操作" width="180">
             <template #default="scope">
-              <el-button size="small" type="danger" @click="removeFromQueue(scope.$index)" circle>
-                <el-icon><Delete /></el-icon>
-              </el-button>
+              <div class="action-buttons">
+                <el-tooltip content="预览压缩效果" placement="top">
+                  <el-button
+                    v-if="compress && scope.row.file.type !== 'image/gif' && scope.row.file.type !== 'image/svg+xml'"
+                    size="small"
+                    @click="previewCompression(scope.row.file)"
+                    :disabled="!compress"
+                  >
+                    <el-icon><ZoomIn /></el-icon>
+                  </el-button>
+                </el-tooltip>
+                
+                <el-tooltip content="从队列移除" placement="top">
+                  <el-button
+                    size="small"
+                    type="danger"
+                    @click="removeFromQueue(scope.$index)"
+                  >
+                    <el-icon><Delete /></el-icon>
+                  </el-button>
+                </el-tooltip>
+              </div>
             </template>
           </el-table-column>
         </el-table>
-        
-        <!-- 上传进度 -->
-        <div class="upload-progress" v-if="isUploading">
-          <el-progress
-            :percentage="uploadProgress"
-            :format="progressFormat"
-            :stroke-width="10"
-            status="success"
-          />
-        </div>
       </el-card>
+      
+      <!-- 压缩预览对话框 -->
+      <el-dialog
+        v-model="previewCompressed"
+        title="压缩预览"
+        width="80%"
+        center
+      >
+        <div class="compression-preview-container">
+          <div class="compression-preview-item">
+            <h4>原始图片 ({{ compressionStats.originalType || '未知' }})</h4>
+            <div class="preview-image">
+              <el-image :src="originalPreview" fit="contain" />
+            </div>
+            <div class="preview-info">
+              <div class="info-label">大小:</div>
+              <div class="info-value">{{ formatFileSize(compressionStats.original) }}</div>
+            </div>
+          </div>
+          
+          <div class="compression-divider">
+            <el-icon><Right /></el-icon>
+          </div>
+          
+          <div class="compression-preview-item">
+            <h4>
+              压缩后图片 (质量: {{ compressQuality }}%)
+              <span v-if="compressionStats.status" class="status-badge">
+                {{ compressionStats.status }}
+              </span>
+            </h4>
+            <div class="preview-image">
+              <el-image :src="compressedPreview" fit="contain" />
+            </div>
+            <div class="preview-info">
+              <div class="info-label">大小:</div>
+              <div class="info-value">
+                {{ formatFileSize(compressionStats.compressed) }}
+                <span v-if="compressionStats.compressedType">
+                  ({{ compressionStats.compressedType }})
+                </span>
+              </div>
+            </div>
+            
+            <div class="compression-stats">
+              <el-progress 
+                :percentage="Number(compressionStats.savedPercent)" 
+                :color="getCompressionColor(compressionStats.savedPercent)"
+                :stroke-width="16"
+                :format="formatCompressionProgress"
+              ></el-progress>
+              
+              <div class="compression-details" v-if="compressionStats.compressed">
+                <div class="detail-item">
+                  <span class="detail-label">节省空间:</span>
+                  <span class="detail-value">{{ formatFileSize(compressionStats.original - compressionStats.compressed) }}</span>
+                </div>
+                
+                <div class="detail-item">
+                  <span class="detail-label">压缩率:</span>
+                  <span 
+                    class="detail-value" 
+                    :class="{'excellent': Number(compressionStats.savedPercent) > 50, 
+                            'good': Number(compressionStats.savedPercent) > 20 && Number(compressionStats.savedPercent) <= 50,
+                            'fair': Number(compressionStats.savedPercent) > 5 && Number(compressionStats.savedPercent) <= 20,
+                            'poor': Number(compressionStats.savedPercent) <= 5}">
+                    {{ compressionStats.savedPercent }}%
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </el-dialog>
       
       <!-- 上传结果 -->
       <el-card class="results-card" v-if="uploadResults.length > 0">
@@ -389,12 +472,142 @@ export default {
     
     // 上传设置
     const compress = ref(store.state.uploadConfig.compress)
+    const compressQuality = ref(store.state.uploadConfig.compressQuality)
+    const convertFormat = ref(false)
+    const targetFormat = ref('webp')
     const autoRename = ref(store.state.uploadConfig.autoRename)
-    const maxSizeMB = computed(() => store.state.uploadConfig.maxSize)
+    
+    // 从store中获取文件限制
     const allowedTypes = computed(() => store.state.uploadConfig.allowedTypes)
-    const compressQuality = ref(85) // 默认压缩质量
-    const convertFormat = ref(false) // 是否转换格式
-    const targetFormat = ref('webp') // 默认目标格式
+    const maxSizeMB = computed(() => store.state.uploadConfig.maxSize)
+    
+    // 监听store中的uploadConfig变化，同步更新本地设置
+    watch(() => store.state.uploadConfig, (newConfig) => {
+      compress.value = newConfig.compress;
+      compressQuality.value = newConfig.compressQuality;
+      autoRename.value = newConfig.autoRename;
+      
+      console.log('从store获取上传配置更新:', {
+        压缩: compress.value ? '启用' : '禁用',
+        压缩质量: `${compressQuality.value}%`,
+        允许类型: allowedTypes.value,
+        最大文件大小: `${maxSizeMB.value}MB`
+      });
+    }, { deep: true });
+    
+    // 监听压缩设置变化
+    watch(compress, (newValue) => {
+      if (!newValue) {
+        // 如果关闭压缩，显示提示
+        console.log('压缩功能已关闭，将上传原始图片');
+      } else {
+        console.log(`压缩功能已开启，质量设置为: ${compressQuality.value}%`);
+      }
+    });
+    
+    // 监听压缩质量变化
+    watch(compressQuality, (newValue) => {
+      if (compress.value) {
+        console.log(`压缩质量已调整为: ${newValue}%`);
+      }
+    });
+    
+    // 格式化压缩质量显示
+    const formatQualityTooltip = (val) => {
+      return `质量: ${val}%`;
+    }
+    
+    // 预览压缩结果
+    const previewCompression = async (file) => {
+      if (!file || !compress.value) return;
+      
+      try {
+        previewCompressed.value = true;
+        originalPreview.value = URL.createObjectURL(file);
+        
+        // 添加加载状态
+        compressionStats.value = {
+          original: file.size,
+          compressed: 0,
+          savedPercent: 0,
+          status: '处理中...'
+        };
+        
+        // 添加加载状态提示
+        ElMessage.info({
+          message: '正在压缩图片，请稍候...',
+          duration: 1000
+        });
+        
+        console.log(`===== 开始压缩预览 =====`);
+        console.log(`文件: ${file.name}, 类型: ${file.type}, 大小: ${(file.size/1024).toFixed(2)}KB`);
+        
+        const compressedFile = await store.dispatch('compressImage', {
+          file,
+          quality: compressQuality.value
+        });
+        
+        // 检查压缩是否生效
+        const wasCompressed = compressedFile !== file;
+        const savedPercent = wasCompressed 
+          ? ((1 - compressedFile.size / file.size) * 100).toFixed(1)
+          : 0;
+        
+        if (wasCompressed) {
+          compressedPreview.value = URL.createObjectURL(compressedFile);
+          
+          compressionStats.value = {
+            original: file.size,
+            compressed: compressedFile.size,
+            savedPercent: savedPercent,
+            originalType: file.type.split('/')[1].toUpperCase(),
+            compressedType: compressedFile.type.split('/')[1].toUpperCase(),
+            status: '完成'
+          };
+          
+          console.log(`===== 压缩预览结果 =====`);
+          console.log(`原始文件: 类型=${file.type}, 大小=${(file.size/1024).toFixed(2)}KB`);
+          console.log(`压缩文件: 类型=${compressedFile.type}, 大小=${(compressedFile.size/1024).toFixed(2)}KB`);
+          console.log(`节省空间: ${savedPercent}%, ${((file.size - compressedFile.size)/1024).toFixed(2)}KB`);
+          
+          // 判断压缩效果并显示相应消息
+          if (Number(savedPercent) > 20) {
+            ElMessage.success(`压缩效果显著: 节省了 ${savedPercent}% 的空间 (${formatFileSize(file.size)} → ${formatFileSize(compressedFile.size)})`);
+          } else if (Number(savedPercent) > 5) {
+            ElMessage.info(`压缩效果一般: 节省了 ${savedPercent}% 的空间 (${formatFileSize(file.size)} → ${formatFileSize(compressedFile.size)})`);
+          } else {
+            ElMessage.warning(`压缩效果有限: 仅节省了 ${savedPercent}% 的空间，建议直接使用原图`);
+          }
+        } else {
+          // 压缩无效的情况
+          compressedPreview.value = originalPreview.value;
+          
+          compressionStats.value = {
+            original: file.size,
+            compressed: file.size,
+            savedPercent: 0,
+            originalType: file.type.split('/')[1].toUpperCase(),
+            compressedType: file.type.split('/')[1].toUpperCase(),
+            status: '未压缩(使用原图)'
+          };
+          
+          console.log(`压缩无效: 文件类型 ${file.type} 不适合压缩或压缩后无明显改善`);
+          ElMessage.info(`该图片 (${file.type.split('/')[1].toUpperCase()}) 压缩效果不明显，将使用原图上传`);
+        }
+      } catch (error) {
+        console.error('压缩预览失败:', error);
+        compressedPreview.value = originalPreview.value;
+        
+        compressionStats.value = {
+          original: file.size,
+          compressed: file.size,
+          savedPercent: 0,
+          status: '失败: ' + (error.message || '未知错误')
+        };
+        
+        ElMessage.warning(`压缩预览失败: ${error.message || '未知错误'}，将使用原始文件`);
+      }
+    }
     
     // 上传队列和结果
     const uploadQueue = ref([])
@@ -547,9 +760,18 @@ export default {
       let successCount = 0
       let failedCount = 0
       
+      // 记住用户的上传设置，更新Vuex存储
+      store.commit('SET_UPLOAD_CONFIG', { 
+        compress: compress.value,
+        compressQuality: compressQuality.value,
+        autoRename: autoRename.value
+      });
+      
       try {
         for (const item of uploadQueue.value) {
           try {
+            console.log(`开始上传图片: ${item.name}, 压缩: ${compress.value ? '启用' : '禁用'}, 质量: ${compressQuality.value}%`);
+            
             // 准备上传参数
             let uploadOptions = {
               file: item.file,
@@ -588,6 +810,8 @@ export default {
               message: '上传成功'
             })
             successCount++
+            
+            console.log(`图片上传成功: ${item.name}, URL: ${result.url}`);
           } catch (error) {
             console.error(`上传失败: ${item.name}`, error)
             
@@ -807,15 +1031,6 @@ export default {
     onMounted(() => {
       setupPasteListener()
       
-      // 保存上传设置
-      watch(compress, (newValue) => {
-        store.commit('SET_UPLOAD_CONFIG', { compress: newValue })
-      })
-      
-      watch(autoRename, (newValue) => {
-        store.commit('SET_UPLOAD_CONFIG', { autoRename: newValue })
-      })
-      
       // 在组件挂载时加载文件夹和标签列表
       fetchFolders()
       fetchTags()
@@ -823,12 +1038,31 @@ export default {
     
     onUnmounted(() => {
       document.removeEventListener('paste', handlePaste)
+      
+      // 清理URL对象，防止内存泄漏
+      if (originalPreview.value) {
+        URL.revokeObjectURL(originalPreview.value)
+      }
+      
+      if (compressedPreview.value && compressedPreview.value !== originalPreview.value) {
+        URL.revokeObjectURL(compressedPreview.value)
+      }
+      
+      // 清理队列中的预览
+      uploadQueue.value.forEach(item => {
+        if (item.preview && item.preview.startsWith('blob:')) {
+          URL.revokeObjectURL(item.preview)
+        }
+      })
     })
     
     return {
       isDragging,
       fileInput,
       compress,
+      compressQuality,
+      convertFormat,
+      targetFormat,
       autoRename,
       maxSizeMB,
       uploadQueue,
@@ -857,11 +1091,28 @@ export default {
       processMarkdownFile,
       focusForPaste,
       formatFileSize,
+      formatQualityTooltip,
+      previewCompression,
       viewImage,
       editImage,
       deleteImage,
       startRenaming,
-      finishRenaming
+      finishRenaming,
+      getCompressionColor: (percent) => {
+        const value = Number(percent);
+        if (value > 50) return '#67C23A'; // 优秀 - 绿色
+        if (value > 20) return '#E6A23C'; // 良好 - 橙色
+        if (value > 5) return '#909399';  // 一般 - 灰色
+        return '#F56C6C';                 // 较差 - 红色
+      },
+      formatCompressionProgress: (percent) => {
+        const value = Number(percent);
+        if (value <= 0) return '无压缩效果';
+        if (value > 50) return `极佳：节省 ${percent}%`;
+        if (value > 20) return `良好：节省 ${percent}%`;
+        if (value > 5) return `一般：节省 ${percent}%`;
+        return `轻微：节省 ${percent}%`;
+      }
     }
   }
 }
@@ -1241,5 +1492,133 @@ export default {
 .filename-display {
   display: flex;
   align-items: center;
+}
+
+.compression-preview-container {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  gap: 20px;
+}
+
+.compression-preview-item {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  border: 1px solid #ebeef5;
+  border-radius: 8px;
+  padding: 20px;
+  box-shadow: 0 2px 12px 0 rgba(0, 0, 0, 0.1);
+}
+
+.preview-image {
+  width: 100%;
+  height: 300px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 16px;
+  background-color: #f5f7fa;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.preview-image .el-image {
+  max-width: 100%;
+  max-height: 100%;
+}
+
+.preview-info {
+  display: flex;
+  width: 100%;
+  padding: 10px 0;
+  border-top: 1px solid #ebeef5;
+}
+
+.info-label {
+  font-weight: bold;
+  margin-right: 10px;
+  color: #606266;
+}
+
+.info-value {
+  color: #303133;
+}
+
+.compression-divider {
+  display: flex;
+  align-items: center;
+  font-size: 24px;
+  color: #909399;
+}
+
+.compression-stats {
+  width: 100%;
+  margin-top: 16px;
+  padding-top: 10px;
+  border-top: 1px solid #ebeef5;
+}
+
+.action-buttons {
+  display: flex;
+  gap: 8px;
+}
+
+.status-badge {
+  padding: 2px 8px;
+  border-radius: 4px;
+  background-color: #f5f7fa;
+  color: #303133;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+[data-theme="dark"] .status-badge {
+  background-color: #111827;
+  color: #f9fafb;
+}
+
+.compression-details {
+  margin-top: 16px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.detail-item {
+  display: flex;
+  flex-direction: column;
+}
+
+.detail-label {
+  font-weight: 500;
+  color: #606266;
+}
+
+.detail-value {
+  color: #303133;
+}
+
+[data-theme="dark"] .detail-label,
+[data-theme="dark"] .detail-value {
+  color: #9ca3af;
+}
+
+.excellent {
+  color: #67C23A;
+}
+
+.good {
+  color: #E6A23C;
+}
+
+.fair {
+  color: #909399;
+}
+
+.poor {
+  color: #F56C6C;
 }
 </style> 

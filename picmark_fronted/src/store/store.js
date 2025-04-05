@@ -55,9 +55,10 @@ export default createStore({
       qiniuBucket: '',
       markdownFormat: '![{filename}]({url})',
       showGrid: true,
-      defaultView: 'grid', // grid or list
+      defaultView: 'grid', // grid, masonry or list
       sortBy: 'uploadTime',
-      sortDirection: 'desc'
+      sortDirection: 'desc',
+      pageSize: 20
     },
     // 统计数据
     statistics: {
@@ -274,6 +275,10 @@ export default createStore({
     // 设置系统设置
     SET_SETTINGS(state, settings) {
       state.settings = { ...state.settings, ...settings }
+      // 如果更新了pageSize，同时更新分页信息
+      if (settings.pageSize) {
+        state.pagination.pageSize = settings.pageSize
+      }
     },
     
     // 设置标签列表

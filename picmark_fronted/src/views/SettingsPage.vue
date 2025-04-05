@@ -152,6 +152,12 @@
                         <span>网格视图</span>
                       </div>
                     </el-radio>
+                    <el-radio label="masonry">
+                      <div class="option-with-icon">
+                        <el-icon><Menu /></el-icon>
+                        <span>瀑布流视图</span>
+                      </div>
+                    </el-radio>
                     <el-radio label="list">
                       <div class="option-with-icon">
                         <el-icon><List /></el-icon>
@@ -631,7 +637,8 @@ import {
   Management,
   Moon,
   Service,
-  RefreshRight
+  RefreshRight,
+  Menu
 } from '@element-plus/icons-vue'
 
 // 后端API基础URL
@@ -663,7 +670,8 @@ export default {
     Management,
     Moon,
     Service,
-    RefreshRight
+    RefreshRight,
+    Menu
   },
   setup() {
     const store = useStore()
@@ -740,20 +748,41 @@ export default {
     const loadSystemSettings = async () => {
       try {
         const response = await axios.get(`${API_BASE_URL}/settings/system`)
+        console.log('系统设置API响应:', response.data)
+        
         if (response.data.success && response.data.data) {
           const systemSettings = response.data.data
           
+          console.log('接收到的系统设置数据:', systemSettings)
+          
           // 填充基本设置
           if (systemSettings.basic) {
+            console.log('加载基本设置:', systemSettings.basic)
             Object.assign(basicForm, systemSettings.basic)
+          } else {
+            console.warn('未找到basic设置数据')
           }
           
           // 填充上传设置
           if (systemSettings.upload) {
+            console.log('加载上传设置:', systemSettings.upload)
             Object.assign(uploadForm, systemSettings.upload)
+          } else {
+            console.warn('未找到upload设置数据')
           }
           
-          console.log('系统设置加载成功:', systemSettings)
+          // 刷新数据回显
+          basicForm.defaultView = basicForm.defaultView || 'grid'
+          basicForm.sortOption = basicForm.sortOption || 'uploadTime:desc'
+          basicForm.pageSize = basicForm.pageSize || 20
+          basicForm.markdownFormat = basicForm.markdownFormat || '![{filename}]({url})'
+          
+          console.log('设置加载后的表单状态:', {
+            basicForm: { ...basicForm },
+            uploadForm: { ...uploadForm }
+          })
+        } else {
+          console.warn('系统设置API返回无效数据:', response.data)
         }
       } catch (error) {
         console.error('加载系统设置失败:', error)
@@ -838,8 +867,10 @@ export default {
           pageSize: basicForm.pageSize
         };
         
-        // 发送到后端API
-        const response = await axios.post(`${API_BASE_URL}/settings/system`, systemSettings);
+        // 发送到后端API - 修复：使用正确的数据结构{basic: systemSettings}
+        const response = await axios.post(`${API_BASE_URL}/settings/system`, {
+          basic: systemSettings
+        });
         
         if (response.data.success) {
           ElMessage.success('基本设置保存成功');
@@ -852,6 +883,11 @@ export default {
             sortBy,
             sortDirection,
             pageSize: basicForm.pageSize
+          });
+          
+          // 同时更新分页设置，确保变更立即生效
+          store.commit('SET_PAGINATION', { 
+            pageSize: basicForm.pageSize 
           });
         } else {
           ElMessage.error(response.data.message || '保存设置失败');

@@ -1004,7 +1004,7 @@ export default {
     const store = useStore()
     const router = useRouter()
 
-    // 视图状态
+    // 视图状态 - 从store的settings中获取默认值
     const viewMode = ref(store.state.settings.defaultView || 'grid')
     const loading = computed(() => store.state.loading)
     
@@ -1028,11 +1028,11 @@ export default {
       return Array.from(tagSet);
     });
     
-    // 分页
+    // 分页 - 从store的settings中获取默认的pageSize
     const currentPage = ref(store.state.pagination.currentPage)
-    const pageSize = ref(store.state.pagination.pageSize)
+    const pageSize = ref(store.state.settings.pageSize || store.state.pagination.pageSize)
     
-    // 排序
+    // 排序 - 从store的settings中获取默认排序方式
     const sortOption = ref(`${store.state.settings.sortBy}:${store.state.settings.sortDirection}`)
     
     // 预览相关状态
@@ -1758,10 +1758,16 @@ export default {
       // 加载标签列表
       store.dispatch('fetchTags')
       
-      // 从本地存储恢复视图设置
-      if (localStorage.getItem('viewMode')) {
-        viewMode.value = localStorage.getItem('viewMode')
-      }
+      // 应用系统设置中的默认值
+      // 默认视图模式
+      viewMode.value = store.state.settings.defaultView || 'grid'
+      
+      // 默认分页大小
+      pageSize.value = store.state.settings.pageSize || 20
+      store.commit('SET_PAGINATION', { pageSize: pageSize.value })
+      
+      // 默认排序方式
+      sortOption.value = `${store.state.settings.sortBy}:${store.state.settings.sortDirection}`
     })
     
     // 组件卸载时清理资源

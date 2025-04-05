@@ -265,12 +265,28 @@ exports.updateImage = async (req, res) => {
       });
     }
 
-    // 只有图片所有者或管理员可以更新
-    if (image.user.toString() !== req.user._id.toString() && req.user.role !== 'admin') {
-      return res.status(403).json({
-        success: false,
-        message: '您无权更新此图片'
-      });
+    // 权限检查
+    // 以下情况允许更新图片:
+    // 1. 图片是匿名上传的 (isAnonymous === true)
+    // 2. 用户是图片所有者
+    // 3. 用户是管理员
+    if (!image.isAnonymous) {
+      // 如果不是匿名上传的图片，则需要用户登录
+      if (!req.user) {
+        console.log(`未授权的更新请求: 图片ID ${imageId} 不是匿名上传且未提供认证`);
+        return res.status(401).json({
+          success: false,
+          message: '未授权，请登录后再试'
+        });
+      }
+      
+      // 检查登录用户是否有权限更新此图片
+      if (image.user && image.user.toString() !== req.user._id.toString() && req.user.role !== 'admin') {
+        return res.status(403).json({
+          success: false,
+          message: '您无权更新此图片'
+        });
+      }
     }
 
     // 更新图片信息（只允许更新某些字段）
@@ -285,7 +301,12 @@ exports.updateImage = async (req, res) => {
       imageId,
       updateData,
       { new: true, runValidators: true }
-    ).populate('user', 'username avatar');
+    );
+    
+    // 如果图片有关联用户，则填充用户信息
+    if (updatedImage.user) {
+      await updatedImage.populate('user', 'username avatar');
+    }
 
     res.json({
       success: true,
@@ -505,6 +526,256 @@ exports.addImageToFolder = async (req, res) => {
     });
   } catch (error) {
     console.error('添加图片到文件夹失败:', error);
+    res.status(500).json({
+      success: false,
+      message: '服务器错误'
+    });
+  }
+};
+
+/**
+ * 记录图片被访问
+ * @route POST /api/images/:id/view
+ * @access Public
+ */
+exports.recordImageView = async (req, res) => {
+  try {
+    const imageId = req.params.id;
+    
+    // 获取客户端IP
+    const clientIP = req.headers['x-forwarded-for'] || req.connection.remoteAddress;
+    
+    // 获取当前时间
+    const viewTime = new Date();
+    
+    // 查找图片
+    const image = await Image.findById(imageId);
+    
+    if (!image) {
+      return res.status(404).json({
+        success: false,
+        message: '图片不存在'
+      });
+    }
+    
+    // 增加浏览量
+    image.views = (image.views || 0) + 1;
+    
+    // 记录访问日志（如果图片模型有此字段）
+    if (Array.isArray(image.viewLogs)) {
+      image.viewLogs.push({ ip: clientIP, time: viewTime });
+      
+      // 限制日志数量，只保留最近的100条
+      if (image.viewLogs.length > 100) {
+        image.viewLogs = image.viewLogs.slice(-100);
+      }
+    }
+    
+    // 保存修改
+    await image.save();
+    
+    console.log(`图片 ${imageId} 被 ${clientIP} 在 ${viewTime.toISOString()} 访问，累计访问量: ${image.views}`);
+    
+    res.status(200).json({
+      success: true,
+      message: '访问已记录',
+      views: image.views
+    });
+  } catch (error) {
+    console.error('记录图片访问失败:', error);
+    res.status(500).json({
+      success: false,
+      message: '无法记录图片访问'
+    });
+  }
+};
+
+/**
+ * 获取所有图片
+ * @route GET /api/images/all
+ * @access Public
+ */
+exports.getAllImages = async (req, res) => {
+  try {
+    // 查询所有公开图片，不分页
+    const images = await Image.find({ isPublic: true })
+      .sort({ createdAt: -1 })
+      .populate('user', 'username avatar');
+    
+    res.status(200).json({
+      success: true,
+      count: images.length,
+      data: images
+    });
+  } catch (error) {
+    console.error('获取所有图片失败:', error);
+    res.status(500).json({
+      success: false, 
+      message: '服务器错误'
+    });
+  }
+};
+
+/**
+ * 获取图片的标签
+ * @route GET /api/images/:id/tags
+ * @access Public
+ */
+exports.getImageTags = async (req, res) => {
+  try {
+    const imageId = req.params.id;
+    
+    // 查找图片
+    const image = await Image.findById(imageId);
+    
+    if (!image) {
+      return res.status(404).json({
+        success: false,
+        message: '图片不存在'
+      });
+    }
+    
+    res.status(200).json({
+      success: true,
+      data: image.tags || []
+    });
+  } catch (error) {
+    console.error('获取图片标签失败:', error);
+    res.status(500).json({
+      success: false,
+      message: '服务器错误'
+    });
+  }
+};
+
+/**
+ * 给图片添加标签
+ * @route POST /api/images/:id/tags
+ * @access Private
+ */
+exports.addTagToImage = async (req, res) => {
+  try {
+    const imageId = req.params.id;
+    const { tags } = req.body;
+    
+    if (!tags || !Array.isArray(tags)) {
+      return res.status(400).json({
+        success: false,
+        message: '请提供有效的标签数组'
+      });
+    }
+    
+    // 查找图片
+    const image = await Image.findById(imageId);
+    
+    if (!image) {
+      return res.status(404).json({
+        success: false,
+        message: '图片不存在'
+      });
+    }
+    
+    // 添加新标签并去重
+    const currentTags = image.tags || [];
+    const uniqueTags = [...new Set([...currentTags, ...tags])];
+    
+    // 更新图片的标签
+    image.tags = uniqueTags;
+    await image.save();
+    
+    res.status(200).json({
+      success: true,
+      message: '标签已添加',
+      data: image.tags
+    });
+  } catch (error) {
+    console.error('添加图片标签失败:', error);
+    res.status(500).json({
+      success: false,
+      message: '服务器错误'
+    });
+  }
+};
+
+/**
+ * 从图片移除标签
+ * @route DELETE /api/images/:id/tags/:tagName
+ * @access Private
+ */
+exports.removeTagFromImage = async (req, res) => {
+  try {
+    const imageId = req.params.id;
+    const tagName = req.params.tagName;
+    
+    // 查找图片
+    const image = await Image.findById(imageId);
+    
+    if (!image) {
+      return res.status(404).json({
+        success: false,
+        message: '图片不存在'
+      });
+    }
+    
+    // 移除标签
+    if (image.tags && image.tags.includes(tagName)) {
+      image.tags = image.tags.filter(tag => tag !== tagName);
+      await image.save();
+    }
+    
+    res.status(200).json({
+      success: true,
+      message: '标签已移除',
+      data: image.tags
+    });
+  } catch (error) {
+    console.error('移除图片标签失败:', error);
+    res.status(500).json({
+      success: false,
+      message: '服务器错误'
+    });
+  }
+};
+
+/**
+ * 获取图片的EXIF数据
+ * @route GET /api/images/:id/exif
+ * @access Private
+ */
+exports.getImageExif = async (req, res) => {
+  try {
+    const imageId = req.params.id;
+    
+    // 查找图片
+    const image = await Image.findById(imageId);
+    
+    if (!image) {
+      return res.status(404).json({
+        success: false,
+        message: '图片不存在'
+      });
+    }
+    
+    // 在实际应用中，这里应该返回从图片中提取的EXIF数据
+    // 这里我们返回一些模拟数据
+    const exifData = {
+      make: 'Example Camera',
+      model: 'Model X',
+      exposureTime: '1/100',
+      fNumber: 'f/2.8',
+      iso: 200,
+      dateTaken: new Date().toISOString(),
+      dimensions: `${image.width}x${image.height}`,
+      fileSize: image.fileSize,
+      format: image.format
+    };
+    
+    res.status(200).json({
+      success: true,
+      data: exifData
+    });
+  } catch (error) {
+    console.error('获取图片EXIF数据失败:', error);
     res.status(500).json({
       success: false,
       message: '服务器错误'

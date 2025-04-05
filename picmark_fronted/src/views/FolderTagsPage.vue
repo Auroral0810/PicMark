@@ -110,7 +110,7 @@
                     :effect="tag.effect || 'light'"
                     size="large"
                   >
-                    {{ tag.name }} ({{ tag.count }})
+                    {{ tag.name }} ({{ tag.count || 0 }})
                   </el-tag>
                   <div class="tag-actions">
                     <el-tooltip content="查找图片" placement="top">
@@ -424,8 +424,12 @@ export default {
           ElMessage.success('标签已创建')
         }
         
-        // 重新获取标签列表
-        await fetchTags()
+        // 强制刷新标签列表
+        setTimeout(async () => {
+          await store.dispatch('fetchTags', { forceRefresh: true })
+          await fetchTags()
+        }, 500) // 延迟半秒，确保后端处理完成
+        
         tagDialogVisible.value = false
       } catch (error) {
         console.error('Tag validation error:', error)
@@ -480,18 +484,50 @@ export default {
     
     // 查看文件夹中的图片
     const viewFolderImages = (folder) => {
-      router.push({
-        name: 'home',
-        query: { folder: folder.id }
-      })
+      // 先设置筛选条件
+      store.commit('CLEAR_FILTERS');
+      store.commit('SET_FILTERS', { folderId: folder.id });
+      
+      // 重置分页
+      store.commit('SET_PAGINATION', { currentPage: 1 });
+      
+      // 主动触发数据加载
+      store.dispatch('fetchImages').then(() => {
+        // 成功加载数据后再跳转
+        router.push({
+          name: 'home',
+          query: { folder: folder.id }
+        });
+        
+        ElMessage.success(`正在查看文件夹: ${folder.name}`);
+      }).catch(error => {
+        console.error('加载图片失败:', error);
+        ElMessage.error('加载图片失败，请重试');
+      });
     }
     
     // 查看使用标签的图片
     const viewTaggedImages = (tag) => {
-      router.push({
-        name: 'home',
-        query: { tag: tag.name }
-      })
+      // 先设置筛选条件
+      store.commit('CLEAR_FILTERS');
+      store.commit('SET_FILTERS', { tags: [tag.name] });
+      
+      // 重置分页
+      store.commit('SET_PAGINATION', { currentPage: 1 });
+      
+      // 主动触发数据加载
+      store.dispatch('fetchImages').then(() => {
+        // 成功加载数据后再跳转
+        router.push({
+          name: 'home',
+          query: { tag: tag.name }
+        });
+        
+        ElMessage.success(`正在查看标签: ${tag.name}`);
+      }).catch(error => {
+        console.error('加载图片失败:', error);
+        ElMessage.error('加载图片失败，请重试');
+      });
     }
     
     // 获取文件夹列表

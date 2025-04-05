@@ -144,9 +144,14 @@
               v-for="tag in statistics.popularTags" 
               :key="tag.name" 
               class="tag-item"
-              :style="{ fontSize: calculateTagSize(tag.count) + 'px' }"
+              :style="{ fontSize: calculateTagSize(tag.count || 1) + 'px' }"
             >
-              {{ tag.name }} ({{ tag.count }})
+              {{ tag.name }} ({{ tag.count || 0 }})
+            </div>
+            
+            <!-- 无标签数据时的占位显示 -->
+            <div v-if="!statistics.popularTags || statistics.popularTags.length === 0" class="no-tags-message">
+              暂无标签数据
             </div>
           </div>
         </el-card>
@@ -182,12 +187,35 @@
 </template>
 
 <script>
-import { ref, computed, onMounted, reactive, watch } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import * as echarts from 'echarts'
+import { useStore } from 'vuex'
+import { 
+  TitleComponent, 
+  TooltipComponent, 
+  LegendComponent, 
+  GridComponent 
+} from 'echarts/components'
+import { LineChart, PieChart } from 'echarts/charts'
+import { CanvasRenderer } from 'echarts/renderers'
+// import { ElCard, ElRow, ElCol, ElRadioGroup, ElRadioButton } from 'element-plus'
+
+// 全局注册必要的 ECharts 组件
+echarts.use([
+  TitleComponent, 
+  TooltipComponent, 
+  LegendComponent, 
+  GridComponent,
+  LineChart,
+  PieChart,
+  CanvasRenderer
+])
 
 export default {
   name: 'StatisticsPage',
   setup() {
+    const store = useStore()
+    
     // 图表引用
     const uploadTrendChart = ref(null)
     const storageDistChart = ref(null)
@@ -210,61 +238,8 @@ export default {
     // 上传图表类型
     const uploadChartType = ref('count')
     
-    // 模拟统计数据
-    const statistics = reactive({
-      totalImages: 1258,
-      imagesTrend: 12.5,
-      storageUsed: 1.75 * 1024 * 1024 * 1024, // 1.75GB
-      storageTrend: 8.3,
-      totalVisits: 15768,
-      visitsTrend: -2.1,
-      uploadsToday: 23,
-      uploadsTodayTrend: 15.0,
-      uploadTrend: [
-        { date: '2023-01-01', count: 12, size: 45 },
-        { date: '2023-01-02', count: 18, size: 62 },
-        { date: '2023-01-03', count: 10, size: 38 },
-        { date: '2023-01-04', count: 15, size: 55 },
-        { date: '2023-01-05', count: 20, size: 70 },
-        { date: '2023-01-06', count: 25, size: 85 },
-        { date: '2023-01-07', count: 22, size: 76 },
-        { date: '2023-01-08', count: 28, size: 90 },
-        { date: '2023-01-09', count: 32, size: 105 },
-        { date: '2023-01-10', count: 35, size: 118 },
-        { date: '2023-01-11', count: 30, size: 95 },
-        { date: '2023-01-12', count: 28, size: 92 },
-        { date: '2023-01-13', count: 25, size: 83 },
-        { date: '2023-01-14', count: 29, size: 96 },
-      ],
-      storageDist: [
-        { name: 'JPEG', value: 850 },
-        { name: 'PNG', value: 310 },
-        { name: 'GIF', value: 45 },
-        { name: 'WebP', value: 53 }
-      ],
-      popularTags: [
-        { name: '风景', count: 125 },
-        { name: '科技', count: 98 },
-        { name: '教程', count: 87 },
-        { name: '截图', count: 64 },
-        { name: '产品', count: 56 },
-        { name: '设计', count: 48 },
-        { name: '图表', count: 45 },
-        { name: '人物', count: 38 },
-        { name: '建筑', count: 32 },
-        { name: '动物', count: 28 },
-        { name: '美食', count: 26 },
-        { name: '旅行', count: 22 },
-        { name: '工作', count: 18 },
-      ],
-      popularImages: [
-        { id: 1, filename: '科技展示.jpg', visits: 238, lastVisited: '2023-01-14T10:23:45', url: 'https://picsum.photos/id/1/60/45' },
-        { id: 2, filename: '产品展示.png', visits: 187, lastVisited: '2023-01-14T09:15:22', url: 'https://picsum.photos/id/2/60/45' },
-        { id: 3, filename: '风景图片.jpg', visits: 145, lastVisited: '2023-01-13T18:42:10', url: 'https://picsum.photos/id/3/60/45' },
-        { id: 4, filename: '工作笔记.png', visits: 132, lastVisited: '2023-01-13T14:56:31', url: 'https://picsum.photos/id/4/60/45' },
-        { id: 5, filename: '会议截图.jpg', visits: 124, lastVisited: '2023-01-13T11:30:05', url: 'https://picsum.photos/id/5/60/45' },
-      ]
-    })
+    // 从 store 中获取统计数据
+    const statistics = computed(() => store.state.statistics)
     
     // 格式化存储大小
     const formatStorageSize = (bytes) => {
@@ -291,8 +266,17 @@ export default {
     const calculateTagSize = (count) => {
       const minSize = 12;
       const maxSize = 24;
-      const maxCount = Math.max(...statistics.popularTags.map(tag => tag.count));
-      return minSize + (count / maxCount) * (maxSize - minSize);
+      
+      // 优先使用标签的图片数量(count)来计算字体大小
+      // 也可以使用访问量(views)，但如果没有访问记录，count更有意义
+      const values = statistics.value.popularTags?.map(tag => tag.count || 1) || [1];
+      const maxValue = Math.max(...values, 1); // 确保最小值为1
+      
+      // 确保最小值为1，避免除以0的情况
+      const safeMaxValue = Math.max(1, maxValue);
+      const safeCount = Math.max(1, count);
+      
+      return minSize + (safeCount / safeMaxValue) * (maxSize - minSize);
     }
     
     // 初始化上传趋势图表
@@ -303,17 +287,31 @@ export default {
       
       uploadChart = echarts.init(uploadTrendChart.value);
       
-      const dates = statistics.uploadTrend.map(item => item.date);
+      // 检查数据是否存在
+      if (!statistics.value.recentTrend?.uploads) {
+        console.error('上传趋势数据不可用');
+        return;
+      }
+      
+      // 生成最近7天的日期
+      const today = new Date();
+      const dates = [];
+      for (let i = 6; i >= 0; i--) {
+        const date = new Date(today);
+        date.setDate(today.getDate() - i);
+        dates.push(date.toISOString().substring(0, 10));
+      }
+      
       const series = uploadChartType.value === 'count' 
-        ? statistics.uploadTrend.map(item => item.count)
-        : statistics.uploadTrend.map(item => item.size);
+        ? statistics.value.recentTrend.uploads
+        : statistics.value.recentTrend.visits;
       
       const option = {
         tooltip: {
           trigger: 'axis',
           formatter: function(params) {
             const data = params[0];
-            return `${data.name}<br/>${uploadChartType.value === 'count' ? '数量' : '大小'}: ${data.value}${uploadChartType.value === 'count' ? '张' : 'MB'}`;
+            return `${data.name}<br/>${uploadChartType.value === 'count' ? '数量' : '访问量'}: ${data.value}${uploadChartType.value === 'count' ? '张' : '次'}`;
           }
         },
         grid: {
@@ -336,13 +334,13 @@ export default {
           type: 'value',
           axisLabel: {
             formatter: function(value) {
-              return value + (uploadChartType.value === 'count' ? '张' : 'MB');
+              return value + (uploadChartType.value === 'count' ? '张' : '次');
             }
           }
         },
         series: [
           {
-            name: uploadChartType.value === 'count' ? '上传数量' : '上传大小',
+            name: uploadChartType.value === 'count' ? '上传数量' : '访问量',
             type: 'line',
             smooth: true,
             lineStyle: {
@@ -380,16 +378,31 @@ export default {
       
       storageChart = echarts.init(storageDistChart.value);
       
+      // 检查数据是否存在
+      if (!statistics.value.storageDistribution) {
+        console.error('存储分布数据不可用');
+        return;
+      }
+      
+      // 将存储分布数据转换为图表需要的格式
+      const { jpeg, png, gif, webp } = statistics.value.storageDistribution;
+      const data = [
+        { name: 'JPEG', value: jpeg },
+        { name: 'PNG', value: png },
+        { name: 'GIF', value: gif },
+        { name: 'WebP', value: webp }
+      ];
+      
       const option = {
         tooltip: {
           trigger: 'item',
-          formatter: '{a} <br/>{b}: {c} MB ({d}%)'
+          formatter: '{a} <br/>{b}: {c}% ({d}%)'
         },
         legend: {
           orient: 'vertical',
           right: 10,
           top: 'center',
-          data: statistics.storageDist.map(item => item.name)
+          data: data.map(item => item.name)
         },
         series: [
           {
@@ -416,7 +429,7 @@ export default {
             labelLine: {
               show: false
             },
-            data: statistics.storageDist
+            data: data
           }
         ],
         color: ['#3b82f6', '#10b981', '#f59e0b', '#ef4444']
@@ -427,18 +440,11 @@ export default {
     
     // 初始化图表
     const initCharts = () => {
-      initUploadChart();
-      initStorageChart();
-    }
-    
-    // 监听窗口大小变化，调整图表大小
-    const handleResize = () => {
-      if (uploadChart) {
-        uploadChart.resize();
-      }
-      if (storageChart) {
-        storageChart.resize();
-      }
+      // 设置一个短暂的延迟确保DOM已经渲染
+      setTimeout(() => {
+        initUploadChart();
+        initStorageChart();
+      }, 100);
     }
     
     // 监听上传图表类型变化
@@ -453,18 +459,27 @@ export default {
       initCharts();
     });
     
-    // 组件挂载时初始化
-    onMounted(() => {
-      // 加载统计数据
-      // 在实际应用中，这里应该通过API获取数据
-      
-      // 初始化图表
-      setTimeout(() => {
-        initCharts();
-      }, 100);
-      
-      // 监听窗口大小变化
-      window.addEventListener('resize', handleResize);
+    // 监听窗口大小变化，调整图表大小
+    window.addEventListener('resize', () => {
+      if (uploadChart) {
+        uploadChart.resize();
+      }
+      if (storageChart) {
+        storageChart.resize();
+      }
+    });
+    
+    // 在组件挂载时获取统计数据并初始化图表
+    onMounted(async () => {
+      try {
+        // 从API获取统计数据
+        await store.dispatch('fetchStatistics')
+        
+        // 初始化图表
+        initCharts()
+      } catch (error) {
+        console.error('加载统计数据失败:', error)
+      }
     })
     
     return {
@@ -630,6 +645,14 @@ export default {
 .tag-item:hover {
   transform: scale(1.1);
   color: var(--primary-dark);
+}
+
+.no-tags-message {
+  font-size: 16px;
+  color: #909399;
+  text-align: center;
+  padding: 40px 0;
+  width: 100%;
 }
 
 .image-preview {

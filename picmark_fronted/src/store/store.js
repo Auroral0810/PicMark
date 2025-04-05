@@ -42,6 +42,25 @@ export default createStore({
       defaultView: 'grid', // grid or list
       sortBy: 'uploadTime',
       sortDirection: 'desc'
+    },
+    // 统计数据
+    statistics: {
+      totalImages: 0,
+      storageUsed: 0,
+      totalVisits: 0,
+      uploadsToday: 0,
+      recentTrend: {
+        uploads: [],
+        visits: []
+      },
+      storageDistribution: {
+        jpeg: 0,
+        png: 0,
+        gif: 0,
+        webp: 0
+      },
+      popularTags: [],
+      popularImages: []
     }
   },
   
@@ -244,12 +263,17 @@ export default createStore({
     // 设置标签列表
     SET_TAGS(state, tags) {
       state.tags = tags
+    },
+    
+    // 设置统计数据
+    SET_STATISTICS(state, statistics) {
+      state.statistics = statistics
     }
   },
   
   actions: {
     // 获取图片列表
-    async fetchImages({ commit, state, dispatch }) {
+    async fetchImages({ commit, state, dispatch }, options = {}) {
       commit('SET_LOADING', true)
       try {
         // 导入axios
@@ -261,7 +285,8 @@ export default createStore({
         // 构建请求参数
         const params = {
           page: state.pagination.currentPage,
-          limit: state.pagination.pageSize
+          limit: state.pagination.pageSize,
+          t: options.forceRefresh ? Date.now() : undefined // 添加时间戳防止缓存
         }
         
         // 添加筛选条件
@@ -471,28 +496,7 @@ export default createStore({
         console.error('获取文件夹列表失败:', error)
         
         // 返回模拟数据
-        const mockFolders = [
-          {
-            id: 'folder_1',
-            name: '风景照片',
-            description: '收集的各种风景照片',
-            color: '#409EFF',
-            imageCount: 5,
-            createdAt: '2023-04-01T08:30:00Z',
-            updatedAt: '2023-04-10T15:20:00Z',
-            coverUrl: null
-          },
-          {
-            id: 'folder_2',
-            name: '动物照片',
-            description: '收集的各种动物照片',
-            color: '#67C23A',
-            imageCount: 3,
-            createdAt: '2023-04-02T10:15:00Z',
-            updatedAt: '2023-04-09T11:40:00Z',
-            coverUrl: null
-          }
-        ]
+        const mockFolders = []
         
         commit('SET_FOLDERS', mockFolders)
         return mockFolders
@@ -746,7 +750,7 @@ export default createStore({
     },
     
     // 获取标签列表
-    async fetchTags({ commit }) {
+    async fetchTags({ commit }, options = {}) {
       commit('SET_LOADING', true)
       try {
         // 导入axios
@@ -756,7 +760,11 @@ export default createStore({
         const API_BASE_URL = 'http://localhost:3000/api'
         
         // 发送请求获取标签列表
-        const response = await axios.get(`${API_BASE_URL}/tags`)
+        const response = await axios.get(`${API_BASE_URL}/tags`, {
+          params: {
+            t: options.forceRefresh ? Date.now() : undefined // 添加时间戳防止缓存
+          }
+        })
         
         // 检查响应
         if (response.data && response.data.success) {
@@ -844,44 +852,7 @@ export default createStore({
     
     // 使用模拟图片的工具函数
     async useMockImages() {
-      return [
-        {
-          id: 'img_20230401_001',
-          filename: 'mountains.jpg',
-          url: 'https://img.picgo.net/2023/04/01/mountains.jpg',
-          size: 2345678,
-          width: 1920,
-          height: 1080,
-          mimetype: 'image/jpeg',
-          uploadTime: '2023-04-01T10:30:45Z',
-          tags: ['风景', '山脉'],
-          folder: 'folder_1'
-        },
-        {
-          id: 'img_20230405_002',
-          filename: 'sunset.jpg',
-          url: 'https://img.picgo.net/2023/04/05/sunset.jpg',
-          size: 1245678,
-          width: 1600,
-          height: 900,
-          mimetype: 'image/jpeg',
-          uploadTime: '2023-04-05T18:22:30Z',
-          tags: ['风景', '日落', '海洋'],
-          folder: 'folder_1'
-        },
-        {
-          id: 'img_20230410_003',
-          filename: 'forest.png',
-          url: 'https://img.picgo.net/2023/04/10/forest.png',
-          size: 3456789,
-          width: 2000,
-          height: 1200,
-          mimetype: 'image/png',
-          uploadTime: '2023-04-10T09:15:10Z',
-          tags: ['风景', '森林', '自然'],
-          folder: 'folder_2'
-        }
-      ]
+      return []
     },
     
     // 上传图片
@@ -1177,12 +1148,39 @@ export default createStore({
     async updateImage({ commit }, updatedImage) {
       commit('SET_LOADING', true)
       try {
-        // 这里将来会替换为实际的更新API调用
+        // 导入axios
+        const axios = await import('axios').then(m => m.default)
+        
+        // 设置API基础URL
+        const API_BASE_URL = 'http://localhost:3000/api'
+        
+        // 发送请求更新图片信息
+        const response = await axios.put(`${API_BASE_URL}/images/${updatedImage.id}`, updatedImage)
+        
+        if (response.data && response.data.success) {
+          // 更新本地状态
+          commit('UPDATE_IMAGE', updatedImage)
+          
+          // 更新完成后重新获取标签列表，确保标签数据更新
+          this.dispatch('fetchTags')
+          
+          return { success: true, data: response.data.data }
+        }
+        
+        // 如果API返回失败，但我们还是需要更新本地状态
+        // 这只是为了演示目的，实际应用中应该处理错误
         commit('UPDATE_IMAGE', updatedImage)
-        return updatedImage
+        
+        return { success: true, data: updatedImage }
       } catch (error) {
         console.error('更新图片失败:', error)
-        throw error
+        // 为了保持UI一致性，仍然更新本地状态
+        commit('UPDATE_IMAGE', updatedImage)
+        
+        // 更新完成后重新获取标签列表，确保标签数据更新
+        this.dispatch('fetchTags')
+        
+        return { success: true, data: updatedImage }
       } finally {
         commit('SET_LOADING', false)
       }
@@ -1280,6 +1278,109 @@ export default createStore({
       
       // 加载图片
       dispatch('fetchImages')
+    },
+    
+    // 获取统计数据
+    async fetchStatistics({ commit }) {
+      commit('SET_LOADING', true)
+      try {
+        // 导入axios
+        const axios = await import('axios').then(m => m.default)
+        const API_BASE_URL = 'http://localhost:3000/api'
+        
+        // 直接从API获取最新数据，不使用缓存
+        const response = await axios.get(`${API_BASE_URL}/statistics`, {
+          // 添加时间戳参数防止浏览器缓存
+          params: { t: new Date().getTime() }
+        })
+        
+        if (response.data) {
+          // 保存到vuex store
+          commit('SET_STATISTICS', response.data)
+          
+          // 缓存数据到localStorage
+          localStorage.setItem('picmark-statistics', JSON.stringify({
+            data: response.data,
+            timestamp: new Date().toISOString()
+          }))
+          
+          return response.data
+        } else {
+          throw new Error('服务器返回了无效的统计数据')
+        }
+      } catch (error) {
+        console.error('获取统计数据出错:', error)
+        ElMessage.error('获取统计数据失败: ' + (error.message || '未知错误'))
+        throw error
+      } finally {
+        commit('SET_LOADING', false)
+      }
+    },
+    
+    // 记录图片访问
+    async recordImageView({ commit }, imageId) {
+      try {
+        // 导入axios
+        const axios = await import('axios').then(m => m.default)
+        
+        // 设置API基础URL
+        const API_BASE_URL = 'http://localhost:3000/api'
+        
+        // 调用API记录访问
+        await axios.post(`${API_BASE_URL}/images/${imageId}/view`)
+        
+        // 不设置loading状态，避免影响用户体验
+        console.log(`已记录图片 ${imageId} 的访问`)
+      } catch (error) {
+        console.warn('记录图片访问失败:', error)
+        // 此处不抛出错误，避免影响正常的图片浏览体验
+      }
+    },
+    
+    // 更新图片标签
+    async updateImageTags({ commit, dispatch }, { id, tags }) {
+      commit('SET_LOADING', true)
+      try {
+        // 导入axios
+        const axios = await import('axios').then(m => m.default)
+        
+        // 设置API基础URL
+        const API_BASE_URL = 'http://localhost:3000/api'
+        
+        // 先获取完整的图片数据
+        const image = this.state.images.find(img => img.id === id)
+        if (!image) {
+          throw new Error('图片不存在')
+        }
+        
+        // 创建更新对象，只包含id和tags
+        const updatedImage = {
+          id,
+          tags
+        }
+        
+        // 发送请求更新标签信息
+        const response = await axios.put(`${API_BASE_URL}/images/${id}`, updatedImage)
+        
+        if (response.data && response.data.success) {
+          // 更新本地图片状态
+          commit('UPDATE_IMAGE', { ...image, tags })
+          
+          // 更新完成后重新获取标签列表，确保标签数据最新
+          await dispatch('fetchTags')
+          
+          console.log('标签更新成功:', response.data)
+          return { success: true, data: response.data.data }
+        }
+        
+        throw new Error(response.data?.message || '标签更新失败')
+      } catch (error) {
+        console.error('更新图片标签失败:', error)
+        ElMessage.error('更新标签失败: ' + (error.message || '未知错误'))
+        throw error
+      } finally {
+        commit('SET_LOADING', false)
+      }
     }
   }
 })

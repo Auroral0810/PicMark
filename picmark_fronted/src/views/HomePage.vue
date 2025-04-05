@@ -1000,14 +1000,20 @@ export default {
     const dateRange = ref(null)
     const selectedTags = ref([])
     const availableTags = computed(() => {
-      const tagSet = new Set()
+      // 首先使用store中的tags数据
+      if (store.state.tags && store.state.tags.length > 0) {
+        return store.state.tags.map(tag => tag.name);
+      }
+      
+      // 如果store中没有tags数据，则从图片中提取
+      const tagSet = new Set();
       store.state.images.forEach(img => {
         if (img.tags) {
-          img.tags.forEach(tag => tagSet.add(tag))
+          img.tags.forEach(tag => tagSet.add(tag));
         }
-      })
-      return Array.from(tagSet)
-    })
+      });
+      return Array.from(tagSet);
+    });
     
     // 分页
     const currentPage = ref(store.state.pagination.currentPage)
@@ -1181,10 +1187,14 @@ export default {
       })
     }
     
-    const editImage = (image) => {
-      currentEditImage.value = JSON.parse(JSON.stringify(image))
-      editDialogVisible.value = true
-    }
+    const editImage = async (image) => {
+      // 先确保已加载标签列表
+      await store.dispatch('fetchTags');
+      
+      // 然后设置当前编辑的图片
+      currentEditImage.value = JSON.parse(JSON.stringify(image));
+      editDialogVisible.value = true;
+    };
     
     const saveImageEdit = async () => {
       try {
@@ -1346,12 +1356,19 @@ export default {
     
     const handleImageClick = (image) => {
       if (multiSelectMode.value || selectedImages.value.length > 0) {
-        image.selected = !image.selected
-        updateSelection(image, image.selected)
+        image.selected = !image.selected;
+        updateSelection(image, image.selected);
       } else {
-        showPreviewImage(image)
+        // 记录图片访问统计数据
+        store.dispatch('recordImageView', image.id).catch(err => {
+          console.warn('记录图片访问失败:', err);
+          // 不向用户显示错误，不影响用户体验
+        });
+        
+        // 显示预览图片
+        showPreviewImage(image);
       }
-    }
+    };
     
     const handleSelectionChange = (selection) => {
       selectedImages.value = selection
@@ -1603,13 +1620,19 @@ export default {
       store.commit('SET_FILTERS', { folderId: folder.id })
       showFolderManager.value = false
       
-      // 重新获取图片列表以显示筛选后的结果
-      store.dispatch('fetchImages')
-      
-      ElMessage.success(`正在查看文件夹: ${folder.name}`)
+      // 使用router更新URL，保持路由历史和支持浏览器返回按钮
+      router.push({
+        path: '/',
+        query: { folder: folder.id }
+      })
       
       // 重置分页
       currentPage.value = 1
+      
+      // 强制刷新图片列表以显示筛选后的结果（使用forceRefresh确保数据最新）
+      store.dispatch('fetchImages', { forceRefresh: true })
+      
+      ElMessage.success(`正在查看文件夹: ${folder.name}`)
     }
     
     // 打开创建标签对话框
@@ -1679,13 +1702,43 @@ export default {
       // 设置筛选条件为当前标签
       store.commit('SET_FILTERS', { tags: [tag.name] })
       showTagManager.value = false
+      
+      // 使用router更新URL，保持路由历史和支持浏览器返回按钮
+      router.push({
+        path: '/',
+        query: { tag: tag.name }
+      })
+      
+      // 重置分页
+      currentPage.value = 1
+      
+      // 强制刷新图片列表以显示筛选后的结果（使用forceRefresh确保数据最新）
+      store.dispatch('fetchImages', { forceRefresh: true })
+      
       ElMessage.success(`正在查看标签: ${tag.name}`)
     }
     
     // 组件挂载时从存储加载数据
     onMounted(() => {
-      // 加载图片数据
-      store.dispatch('fetchImages')
+      // 获取URL查询参数
+      const urlParams = new URLSearchParams(window.location.search);
+      const folderParam = urlParams.get('folder');
+      const tagParam = urlParams.get('tag');
+      
+      // 如果URL中包含文件夹参数，设置筛选条件
+      if (folderParam) {
+        store.commit('SET_FILTERS', { folderId: folderParam });
+        ElMessage.success(`正在查看文件夹内容`);
+      }
+      
+      // 如果URL中包含标签参数，设置筛选条件
+      if (tagParam) {
+        store.commit('SET_FILTERS', { tags: [tagParam] });
+        ElMessage.success(`正在查看标签: ${tagParam}`);
+      }
+      
+      // 加载图片数据（使用forceRefresh确保数据最新）
+      store.dispatch('fetchImages', { forceRefresh: true })
       
       // 加载文件夹列表
       fetchFolders()
@@ -1723,6 +1776,34 @@ export default {
       store.commit('SET_PAGINATION', { currentPage: newValue })
     })
     
+    // 监听路由查询参数变化，重新获取图片
+    watch(
+      () => router.currentRoute.value.query,
+      async (newQuery) => {
+        const folderParam = newQuery.folder;
+        const tagParam = newQuery.tag;
+        
+        // 清除现有筛选条件
+        store.commit('CLEAR_FILTERS');
+        
+        // 设置新的筛选条件
+        if (folderParam) {
+          store.commit('SET_FILTERS', { folderId: folderParam });
+        }
+        
+        if (tagParam) {
+          store.commit('SET_FILTERS', { tags: [tagParam] });
+        }
+        
+        // 重置分页
+        currentPage.value = 1;
+        
+        // 重新获取图片数据（使用forceRefresh确保数据最新）
+        await store.dispatch('fetchImages', { forceRefresh: true });
+      },
+      { deep: true }
+    );
+
     // 在当前代码基础上添加预览编辑相关函数
     const editPreviewTags = () => {
       currentEditImage.value = JSON.parse(JSON.stringify(previewImage.value))

@@ -1,0 +1,71 @@
+services:
+  # MongoDB服务
+  mongodb:
+    image: mongo:6
+    container_name: picmark-mongodb
+    volumes:
+      - mongodb_data:/data/db
+    ports:
+      - "${MONGO_PORT:-27017}:27017"
+    restart: always
+    networks:
+      - picmark-network
+
+  # 后端服务
+  backend:
+    build:
+      context: ./picmark_backend
+      dockerfile: Dockerfile
+    container_name: picmark-backend
+    volumes:
+      - backend_logs:/app/logs
+      - backend_uploads:/app/uploads
+    ports:
+      - "${BACKEND_PORT:-3000}:3000"
+    environment:
+      - NODE_ENV=${BACKEND_ENV:-production}
+      - MONGODB_URI=${MONGODB_URI:-mongodb://mongodb:27017/picmark}
+      - PORT=3000
+      - QINIU_ACCESS_KEY=${QINIU_ACCESS_KEY}
+      - QINIU_SECRET_KEY=${QINIU_SECRET_KEY}
+      - QINIU_BUCKET=${QINIU_BUCKET}
+      - QINIU_DOMAIN=${QINIU_DOMAIN}
+      - QINIU_REGION=${QINIU_REGION}
+    depends_on:
+      - mongodb
+    restart: on-failure:5
+    networks:
+      - picmark-network
+    deploy:
+      restart_policy:
+        condition: on-failure
+        max_attempts: 5
+        window: 120s
+
+  # 前端服务
+  frontend:
+    build:
+      context: ./picmark_fronted
+      dockerfile: Dockerfile
+    container_name: picmark-frontend
+    ports:
+      - "${FRONTEND_PORT:-80}:80"
+    depends_on:
+      - backend
+    restart: always
+    networks:
+      - picmark-network
+
+# 网络配置
+networks:
+  picmark-network:
+    driver: bridge
+
+# 数据卷配置
+volumes:
+  mongodb_data:
+    driver: local
+  backend_logs:
+    driver: local
+  backend_uploads:
+    driver: local 

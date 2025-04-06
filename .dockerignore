@@ -1,0 +1,21 @@
+# 通用
+.git
+.gitignore
+.dockerignore
+.DS_Store
+.env
+*.md
+LICENSE
+docker-compose.yml
+deploy.sh
+
+# 前端
+picmark_fronted/node_modules
+picmark_fronted/dist
+picmark_fronted/.DS_Store
+
+# 后端
+picmark_backend/node_modules
+picmark_backend/logs/*
+picmark_backend/uploads/*
+picmark_backend/.DS_Store 

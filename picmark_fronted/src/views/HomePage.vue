@@ -997,6 +997,7 @@ import { ref, computed, onMounted, watch, onUnmounted } from 'vue'
 import { useStore } from 'vuex'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
+import { copyToClipboard } from '../utils/clipboard'; // 导入剪贴板工具
 
 export default {
   name: 'HomePage',
@@ -1182,20 +1183,22 @@ export default {
         .replace('{filename}', image.filename)
         .replace('{url}', image.url)
       
-      navigator.clipboard.writeText(link).then(() => {
-        ElMessage.success('Markdown链接已复制到剪贴板')
-      }).catch(err => {
-        console.error('复制失败:', err)
-        ElMessage.error('复制失败')
+      copyToClipboard(link).then(success => {
+        if (success) {
+          ElMessage.success('Markdown链接已复制到剪贴板')
+        } else {
+          ElMessage.info('请手动复制显示的文本')
+        }
       })
     }
     
     const copyImageUrl = (image) => {
-      navigator.clipboard.writeText(image.url).then(() => {
-        ElMessage.success('图片链接已复制到剪贴板')
-      }).catch(err => {
-        console.error('复制失败:', err)
-        ElMessage.error('复制失败')
+      copyToClipboard(image.url).then(success => {
+        if (success) {
+          ElMessage.success('图片链接已复制到剪贴板')
+        } else {
+          ElMessage.info('请手动复制显示的文本')
+        }
       })
     }
     
@@ -1278,11 +1281,12 @@ export default {
       // 创建带有宽高、文件大小（精确到两位小数）、上传时间（含时分秒）和IP地址的HTML标签
       const html = `<img src="${image.url}" alt="${image.filename}" width="${image.width}" height="${image.height}" data-size="${formatFileSize(image.size)}" data-upload-time="${formatDate(image.uploadTime)}" ${image.ipAddress ? `data-ip="${image.ipAddress}"` : ''} />`;
       
-      navigator.clipboard.writeText(html).then(() => {
-        ElMessage.success('HTML链接已复制到剪贴板');
-      }).catch(err => {
-        console.error('复制失败:', err);
-        ElMessage.error('复制失败');
+      copyToClipboard(html).then(success => {
+        if (success) {
+          ElMessage.success('HTML链接已复制到剪贴板');
+        } else {
+          ElMessage.info('请手动复制显示的文本');
+        }
       });
     }
 
@@ -1414,11 +1418,12 @@ export default {
           break
       }
       
-      navigator.clipboard.writeText(links).then(() => {
-        ElMessage.success(`已复制${selectedImages.value.length}个链接到剪贴板`)
-      }).catch(err => {
-        console.error('复制失败:', err)
-        ElMessage.error('复制失败')
+      copyToClipboard(links).then(success => {
+        if (success) {
+          ElMessage.success(`已复制${selectedImages.value.length}个链接到剪贴板`)
+        } else {
+          ElMessage.info('请手动复制显示的文本')
+        }
       })
     }
     
